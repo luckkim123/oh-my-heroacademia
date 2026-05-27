@@ -1,0 +1,10 @@
+{
+  "name": "superpowers",
+  "description": "placeholder — filled in Task 3",
+  "url": "http://localhost:8973/superpowers",
+  "version": "0.1.0",
+  "capabilities": {},
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "skills": []
+}
