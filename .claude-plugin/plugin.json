@@ -1,0 +1,21 @@
+{
+  "name": "oh-my-heroacademia",
+  "description": "Meta-orchestration harness. Routes each request to the right lane (superpowers / oh-my-claudecode / handle-directly) via a UserPromptSubmit hook that reads declarative harness cards.",
+  "author": { "name": "kimseungmin" },
+  "license": "MIT",
+  "keywords": ["claude-code", "plugin", "routing", "orchestration", "meta"],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/route_emit.py"]
+          }
+        ]
+      }
+    ]
+  }
+}
