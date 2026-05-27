@@ -16,6 +16,30 @@ v0.3.0 — **stage-1: plugin-hook lane routing.** omha is now also a Claude Code
 turn and injects a lane-routing checkpoint. The Claude Code session (LLM) does the
 judgment; the hook only feeds it the cards. No server (removed in v0.2.0).
 
+## Prerequisites
+
+omha **routes** to lanes; it does not bundle or install them. Claude Code plugins
+have no dependency declaration, so you must install the lane harnesses yourself
+**before** omha is useful — otherwise omha will route a request to a lane whose
+skills are not present:
+
+```bash
+# superpowers (the "discipline" lane)
+claude plugin install superpowers@claude-plugins-official
+
+# oh-my-claudecode (the "throughput/autonomy" lane)
+claude plugin marketplace add Yeachan-Heo/oh-my-claudecode
+claude plugin install oh-my-claudecode@omc
+
+# then omha itself
+claude plugin marketplace add https://github.com/luckkim123/oh-my-heroacademia.git
+claude plugin install oh-my-heroacademia@heroacademia
+```
+
+With neither lane installed, omha degrades to "handle-directly" for everything —
+harmless, but pointless. Installing one lane (just SP, or just OMC) is fine; omha
+will simply never route to the missing one.
+
 ## Routing model — 3-tier fallback cascade
 
 The hook injects this every turn; the session decides:
