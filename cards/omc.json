@@ -9,19 +9,19 @@
   "skills": [
     {"id": "ultrawork", "name": "ultrawork",
      "description": "Many independent edits, pure throughput, no verification loop.",
-     "tags": ["parallel", "throughput", "bulk-edit", "refactor"],
-     "examples": ["rename X across 20 files", "do these independent edits at once"]},
+     "tags": ["parallel", "throughput", "bulk-edit", "refactor", "병렬", "일괄", "동시에", "한꺼번에"],
+     "examples": ["rename X across 20 files", "do these independent edits at once", "여러 파일에서 한꺼번에 바꿔줘", "여러 모듈 동시에 병렬로 작업해줘"]},
     {"id": "team", "name": "team",
      "description": "Workers must coordinate/message on a shared task list.",
-     "tags": ["multi-agent", "coordination", "review-roles"],
-     "examples": ["scope then execute with implementer + reviewer"]},
+     "tags": ["multi-agent", "coordination", "review-roles", "팀", "협업", "워커"],
+     "examples": ["scope then execute with implementer + reviewer", "여러 워커가 공유 태스크 보면서 협업하게 해줘"]},
     {"id": "autopilot", "name": "autopilot",
      "description": "From a 2-3 line idea, run the whole lifecycle hands-off.",
-     "tags": ["autonomous", "hands-off", "lifecycle"],
-     "examples": ["just build this from my brief", "do it until done"]},
+     "tags": ["autonomous", "hands-off", "lifecycle", "자율", "알아서", "처음부터끝까지"],
+     "examples": ["just build this from my brief", "do it until done", "이 아이디어로 처음부터 끝까지 알아서 다 만들어줘"]},
     {"id": "ralph", "name": "ralph",
      "description": "Keep going on its own until the work is verified complete.",
-     "tags": ["loop", "persist", "until-tests-pass"],
-     "examples": ["loop until tests pass"]}
+     "tags": ["loop", "persist", "until-tests-pass", "반복", "통과까지", "될때까지"],
+     "examples": ["loop until tests pass", "테스트 통과할 때까지 알아서 반복해줘"]}
   ]
 }
