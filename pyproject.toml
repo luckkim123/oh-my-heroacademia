@@ -12,6 +12,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]
 
+[project.scripts]
+omha = "omha.server:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
