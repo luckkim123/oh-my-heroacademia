@@ -11,34 +11,42 @@ and distributing personal plugins (e.g. oh-my-docs).
 
 ## Status
 
-v0.2.0 — cards-not-server. The HTTP server and keyword scorer of v0.1.0 were
-removed: the routing brain is the Claude Code session (LLM), and the cards are
-the data it reads. See the design doc below.
+v0.3.0 — **stage-1: plugin-hook lane routing.** omha is now also a Claude Code
+**plugin**: once installed, a `UserPromptSubmit` hook reads `cards/*.json` every
+turn and injects a lane-routing checkpoint. The Claude Code session (LLM) does the
+judgment; the hook only feeds it the cards. No server (removed in v0.2.0).
 
 ## Routing model — 3-tier fallback cascade
 
-Every non-trivial decision passes through routing once:
+The hook injects this every turn; the session decides:
 
-1. **SP / OMC** (work-style harnesses, this registry's cards) — pick the fitting one.
+1. **SP / OMC** (work-style harnesses, this registry's cards) — pick the fitting lane.
 2. **Installed domain skills** (oh-my-docs, ppt-academic, gen-image, …) — when no
-   harness fits. These are reached as Claude Code skills, not omha cards.
-3. **Claude Code direct** — when neither applies.
+   harness lane fits. Reached as Claude Code skills, not omha cards.
+3. **Claude Code direct** — when neither applies (trivial / single-file).
+
+The session names the lane; the *skill* inside that lane is picked by the lane's
+own plugin (OMC's keyword-detector, SP's using-superpowers), not by omha. omha
+routes lanes, not skills.
 
 ## What's here
 
 | Path | Role |
 |------|------|
-| `cards/superpowers.json`, `cards/omc.json` | Work-style harness cards (A2A AgentCard schema) — the routing registry |
-| `src/omha/registry.py` | `load_cards()` — loads & validates `cards/*.json` as A2A AgentCards |
+| `hooks/route_emit.py` | `UserPromptSubmit` hook — reads `cards/*.json` (stdlib only, **no a2a-sdk**) and injects the lane-routing checkpoint every turn |
+| `cards/superpowers.json`, `cards/omc.json` | Work-style harness cards — the routing registry (single source of truth) |
+| `.claude-plugin/plugin.json` | Plugin manifest registering the hook (version omitted → commit-SHA versioning) |
 | `.claude-plugin/marketplace.json` | heroacademia marketplace (own-code plugins, e.g. oh-my-docs) |
+| `src/omha/registry.py` | `load_cards()` — A2A AgentCard validation, **dev/CI-time only** (the runtime hook does not depend on it) |
 
 ## How to add a harness
 
-Drop a new file at `cards/<name>.json` following the A2A AgentCard schema. No core
-code change required — `load_cards()` reads every `*.json` in `cards/`. The
-`tags` and `examples` in the card are the routing signals the session reads.
+Drop a new file at `cards/<name>.json`. The hook reads every `*.json` in `cards/`
+— no code change. The card's `name` + `description` are the lane signals the
+session reads.
 
 ## Design docs
 
-- `/Users/kimseungmin/Desktop/workspace/00-09_Meta/02_Decisions/2026-05-28-omha-redesign-cards-not-server.md` (current — v2)
-- `/Users/kimseungmin/Desktop/workspace/00-09_Meta/02_Decisions/2026-05-27-omha-design.md` (v1, server era — superseded §1.3/1.4)
+- `.../02_Decisions/2026-05-28-omha-stage1-plugin-hook-routing.md` (current — stage-1)
+- `.../02_Decisions/2026-05-28-omha-redesign-cards-not-server.md` (v2 — cards-not-server)
+- `.../02_Decisions/2026-05-27-omha-design.md` (v1, server era — superseded)
