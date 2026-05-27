@@ -1,0 +1,13 @@
+{
+  "name": "heroacademia",
+  "owner": { "name": "kimseungmin" },
+  "description": "kimseungmin's personal harness marketplace — own-code plugins (oh-my-docs, ...). SP/OMC stay on their remote marketplaces.",
+  "plugins": [
+    {
+      "name": "oh-my-docs",
+      "source": "/Users/kimseungmin/oh-my-docs",
+      "description": "Document-work harness (pptx/docx/xlsx/hwpx)",
+      "version": "0.1.0"
+    }
+  ]
+}
