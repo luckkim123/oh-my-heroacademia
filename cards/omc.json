@@ -1,27 +1,25 @@
 {
   "name": "oh-my-claudecode",
-  "description": "Throughput-governed multi-agent orchestration: parallel edits, team coordination, hands-off lifecycle, loop-until-verified. Use for many independent units or autonomous runs.",
+  "description": "Throughput & autonomy lane. Route here when the work is about SCALE or RUNNING ON ITS OWN rather than per-line correctness: many independent edits at once, workers coordinating on a shared task list, hands-off lifecycle from a short brief, looping until tests pass, read-only 'why did this happen' investigation (no fix), light scoping, or research/knowledge ops. It governs HOW you work — NOT a document/slide/image domain (those are installed skills), and NOT rigorous test-first/verify-before-done correctness work (that is superpowers).",
   "url": "http://localhost:8973/omc",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "capabilities": {},
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
   "skills": [
-    {"id": "ultrawork", "name": "ultrawork",
-     "description": "Many independent edits, pure throughput, no verification loop.",
-     "tags": ["parallel", "throughput", "bulk-edit", "refactor", "병렬", "일괄", "동시에", "한꺼번에"],
-     "examples": ["rename X across 20 files", "do these independent edits at once", "여러 파일에서 한꺼번에 바꿔줘", "여러 모듈 동시에 병렬로 작업해줘"]},
-    {"id": "team", "name": "team",
-     "description": "Workers must coordinate/message on a shared task list.",
-     "tags": ["multi-agent", "coordination", "review-roles", "팀", "협업", "워커"],
-     "examples": ["scope then execute with implementer + reviewer", "여러 워커가 공유 태스크 보면서 협업하게 해줘"]},
-    {"id": "autopilot", "name": "autopilot",
-     "description": "From a 2-3 line idea, run the whole lifecycle hands-off.",
-     "tags": ["autonomous", "hands-off", "lifecycle", "자율", "알아서", "처음부터끝까지"],
-     "examples": ["just build this from my brief", "do it until done", "이 아이디어로 처음부터 끝까지 알아서 다 만들어줘"]},
-    {"id": "ralph", "name": "ralph",
-     "description": "Keep going on its own until the work is verified complete.",
-     "tags": ["loop", "persist", "until-tests-pass", "반복", "통과까지", "될때까지"],
-     "examples": ["loop until tests pass", "테스트 통과할 때까지 알아서 반복해줘"]}
+    {"id": "throughput-autonomy", "name": "throughput-autonomy-lane",
+     "description": "Representative signals that route to oh-my-claudecode (the session then picks the exact OMC skill).",
+     "tags": ["parallel", "throughput", "autonomous", "loop-until-pass", "investigate-why", "team", "병렬", "일괄", "자율", "반복"],
+     "examples": [
+       "rename X across 20 files / many independent edits at once",
+       "여러 파일 한꺼번에 싹 다 바꿔줘",
+       "workers coordinate on a shared task list (multi-role review)",
+       "from a 2-3 line idea, run the whole lifecycle hands-off",
+       "keep looping on its own until tests pass",
+       "테스트 통과할 때까지 알아서 반복",
+       "explain WHY this happened — analysis only, not fixing (trace)",
+       "성능이 왜 느린지 분석만, 고치진 말고",
+       "clarify my requirements before building / scope this lightly"
+     ]}
   ]
 }

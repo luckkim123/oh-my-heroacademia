@@ -1,0 +1,81 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1779914369491,
+  "projectRoot": "/Users/kimseungmin/oh-my-heroacademia",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "pytest",
+        "version": null,
+        "category": "testing"
+      }
+    ],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pytest",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "src",
+      "tests"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "cards": {
+      "path": "cards",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1779914369474,
+      "keyFiles": [
+        "omc.json",
+        "superpowers.json"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1779914369475,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 3,
+      "lastAccessed": 1779914369475,
+      "keyFiles": [
+        "test_cards_valid.py",
+        "test_registry.py",
+        "test_smoke.py"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

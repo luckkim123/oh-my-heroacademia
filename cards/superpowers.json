@@ -1,27 +1,24 @@
 {
   "name": "superpowers",
-  "description": "Discipline-governed harness: TDD, systematic debugging, plan writing, verification-before-completion. Use when correctness matters and wrong is expensive.",
+  "description": "Discipline lane. Route here when CORRECTNESS governs and getting it wrong is expensive: writing code test-first, finding a bug's root cause before fixing, verifying a 'done' claim with evidence, reviewing a specific diff, or turning a chosen direction into a rigorous step-by-step plan. It governs HOW you work on code — NOT a document/slide/image domain (those are installed skills), and NOT raw parallel throughput or autonomous looping (that is oh-my-claudecode).",
   "url": "http://localhost:8973/superpowers",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "capabilities": {},
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
   "skills": [
-    {"id": "tdd", "name": "test-driven-development",
-     "description": "Write a feature/bugfix where correctness matters, red-green-refactor.",
-     "tags": ["tdd", "tests", "correctness", "discipline", "테스트", "정확성"],
-     "examples": ["write this feature with tests first", "make the failing test pass", "테스트부터 쓰고 통과시켜줘"]},
-    {"id": "debug", "name": "systematic-debugging",
-     "description": "Find the root cause before fixing; don't guess.",
-     "tags": ["debugging", "root-cause", "investigation", "디버깅", "원인", "버그"],
-     "examples": ["why is this failing", "find the root cause before the fix", "고치기 전에 근본 원인부터 찾아줘"]},
-    {"id": "plan", "name": "writing-plans",
-     "description": "Turn a settled direction into a concrete step-by-step TDD plan.",
-     "tags": ["planning", "tdd-plan", "spec", "계획", "단계별"],
-     "examples": ["write a step-by-step plan an implementer can follow", "단계별 계획 세워줘"]},
-    {"id": "brainstorm", "name": "brainstorming",
-     "description": "Diverge on approaches when no direction is chosen yet.",
-     "tags": ["brainstorm", "design", "diverge", "설계", "방향", "비교"],
-     "examples": ["compare a few approaches", "which design is better", "어떤 방향이 나을지 비교해줘"]}
+    {"id": "discipline", "name": "discipline-lane",
+     "description": "Representative signals that route to superpowers (the session then picks the exact SP skill).",
+     "tags": ["correctness", "tdd", "debugging", "verification", "code-review", "planning", "정확성", "규율"],
+     "examples": [
+       "write this feature test-first / make the failing test pass",
+       "about to fix a bug — find the root cause first, don't guess",
+       "verify this is actually done/correct before we ship",
+       "send a reviewer over this specific diff",
+       "turn this chosen direction into a step-by-step plan",
+       "이 버그 고치기 전에 근본 원인부터",
+       "정말 다 됐는지 증거로 검증",
+       "어떤 방향이 나을지 비교 (no direction yet)"
+     ]}
   ]
 }
