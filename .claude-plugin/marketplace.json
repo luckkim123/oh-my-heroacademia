@@ -9,8 +9,7 @@
         "source": "github",
         "repo": "luckkim123/oh-my-docs"
       },
-      "description": "Document-work harness (pptx/docx/xlsx/hwpx)",
-      "version": "0.1.0"
+      "description": "Document-work harness (pptx/docx/xlsx/hwpx)"
     }
   ]
 }
