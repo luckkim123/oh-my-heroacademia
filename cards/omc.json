@@ -1,0 +1,27 @@
+{
+  "name": "oh-my-claudecode",
+  "description": "Throughput-governed multi-agent orchestration: parallel edits, team coordination, hands-off lifecycle, loop-until-verified. Use for many independent units or autonomous runs.",
+  "url": "http://localhost:8973/omc",
+  "version": "0.1.0",
+  "capabilities": {},
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "skills": [
+    {"id": "ultrawork", "name": "ultrawork",
+     "description": "Many independent edits, pure throughput, no verification loop.",
+     "tags": ["parallel", "throughput", "bulk-edit", "refactor"],
+     "examples": ["rename X across 20 files", "do these independent edits at once"]},
+    {"id": "team", "name": "team",
+     "description": "Workers must coordinate/message on a shared task list.",
+     "tags": ["multi-agent", "coordination", "review-roles"],
+     "examples": ["scope then execute with implementer + reviewer"]},
+    {"id": "autopilot", "name": "autopilot",
+     "description": "From a 2-3 line idea, run the whole lifecycle hands-off.",
+     "tags": ["autonomous", "hands-off", "lifecycle"],
+     "examples": ["just build this from my brief", "do it until done"]},
+    {"id": "ralph", "name": "ralph",
+     "description": "Keep going on its own until the work is verified complete.",
+     "tags": ["loop", "persist", "until-tests-pass"],
+     "examples": ["loop until tests pass"]}
+  ]
+}

@@ -1,10 +1,27 @@
 {
   "name": "superpowers",
-  "description": "placeholder — filled in Task 3",
+  "description": "Discipline-governed harness: TDD, systematic debugging, plan writing, verification-before-completion. Use when correctness matters and wrong is expensive.",
   "url": "http://localhost:8973/superpowers",
   "version": "0.1.0",
   "capabilities": {},
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
-  "skills": []
+  "skills": [
+    {"id": "tdd", "name": "test-driven-development",
+     "description": "Write a feature/bugfix where correctness matters, red-green-refactor.",
+     "tags": ["tdd", "tests", "correctness", "discipline"],
+     "examples": ["write this feature with tests first", "make the failing test pass"]},
+    {"id": "debug", "name": "systematic-debugging",
+     "description": "Find the root cause before fixing; don't guess.",
+     "tags": ["debugging", "root-cause", "investigation"],
+     "examples": ["why is this failing", "find the root cause before the fix"]},
+    {"id": "plan", "name": "writing-plans",
+     "description": "Turn a settled direction into a concrete step-by-step TDD plan.",
+     "tags": ["planning", "tdd-plan", "spec"],
+     "examples": ["write a step-by-step plan an implementer can follow"]},
+    {"id": "brainstorm", "name": "brainstorming",
+     "description": "Diverge on approaches when no direction is chosen yet.",
+     "tags": ["brainstorm", "design", "diverge"],
+     "examples": ["compare a few approaches", "which design is better"]}
+  ]
 }

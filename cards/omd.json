@@ -1,0 +1,19 @@
+{
+  "name": "oh-my-docs",
+  "description": "PLANNED. Document-work harness specialized by file format (pptx/docx/xlsx/hwpx). Thin orchestration over existing render tools. Not yet implemented — card present for discovery only.",
+  "url": "http://localhost:8973/omd",
+  "version": "0.0.0",
+  "capabilities": {},
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "skills": [
+    {"id": "docs-pptx", "name": "docs-pptx",
+     "description": "Build/edit PowerPoint decks (planned).",
+     "tags": ["pptx", "powerpoint", "slides", "deck", "발표자료"],
+     "examples": ["make a slide deck", "edit this pptx", "발표자료 만들어"]},
+    {"id": "docs-pilot", "name": "docs-pilot",
+     "description": "Format-agnostic document orchestration entry (planned).",
+     "tags": ["docx", "xlsx", "hwpx", "document", "문서"],
+     "examples": ["clean up this document", "이 문서 정리해줘"]}
+  ]
+}
