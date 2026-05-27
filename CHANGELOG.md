@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 — 2026-05-28
+### Removed
+- HTTP server (`server.py`) + FastAPI/uvicorn deps + `omha` console entry point.
+- Keyword router (`router.py`, `_score`) — routing brain moves to the Claude Code session (LLM), cards are the data it reads.
+- `cards/omd.json` — OMD is a document *domain* tool, not a work-*style* harness; it ships via the heroacademia marketplace and is reached as an installed skill, not an omha routing card.
+- `tests/test_server.py`, `tests/test_router.py`.
+### Changed
+- omha is now a declarative harness card registry, not a server. `registry.py` + `cards/*.json` (SP/OMC) remain; `a2a-sdk` kept (cards validated as A2A AgentCard), FastAPI/uvicorn/httpx dropped.
+- Routing model = 3-tier fallback cascade (1: SP/OMC harness cards, 2: installed domain skills incl. OMD/ppt-academic/gen-image, 3: Claude Code direct). See `2026-05-28-omha-redesign-cards-not-server.md`.
+### Verification
+- pytest: smoke + registry + cards_valid — 5 tests, all green.
+### Notes
+- Rationale: the "server" was justified only by multi-machine federation, which turned out not to be a real requirement (machines sync via iCloud/git, not network calls). v0.1.0 server recoverable from git history (commit c01f95e) if federation is ever needed.
+
 ## 0.1.0 — 2026-05-27
 ### Added
 - omha A2A HTTP server (stage-1 판정형 router).

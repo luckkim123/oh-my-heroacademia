@@ -1,19 +1,14 @@
 [project]
 name = "omha"
-version = "0.1.0"
-description = "oh-my-heroacademia — meta-coordinator that routes requests across harnesses (superpowers/OMC/OMD) via A2A cards"
+version = "0.2.0"
+description = "oh-my-heroacademia — declarative harness card registry (superpowers/OMC/OMD). Routing is done by the Claude Code session reading the cards; no HTTP server."
 requires-python = ">=3.11"
 dependencies = [
     "a2a-sdk>=0.3,<0.4",
-    "fastapi",
-    "uvicorn",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx"]
-
-[project.scripts]
-omha = "omha.server:main"
+dev = ["pytest"]
 
 [build-system]
 requires = ["hatchling"]
