@@ -21,9 +21,19 @@ def build_routing_context(cards_dir: Path) -> str:
     return (
         "<omha-routing>\n"
         "3+ 액션/복수파일 요청이면, 아래 하네스 카드로 어느 레인인지 한 줄 판정·선언하라.\n"
-        "레인만 정하라 — 레인 안 스킬 콕집기는 해당 plugin 이 한다. "
-        "적절한 레인이 없으면 handle-directly(직접 수행).\n\n"
-        f"{body}\n"
+        "레인만 정하라 — 레인 안 스킬 콕집기는 해당 plugin 이 한다.\n\n"
+        f"{body}\n\n"
+        "폴백 캐스케이드 (위에서부터, 맞는 게 없으면 다음):\n"
+        "· 1순위 — 위 하네스 레인(작업방식: SP/OMC) 중 적합한 것.\n"
+        "· 2순위 — 적합 레인 없음 → 설치된 도메인 스킬(문서=OMD, 슬라이드·이미지 등). 이건 레인이 아니라 도메인 처리기.\n"
+        "· 3순위 — 그것도 없음 → handle-directly(직접 수행).\n\n"
+        "재라우팅 의무: 2순위 도메인 스킬 안에서 작업 중이라도, 본질적으로 작업방식\n"
+        "레인(SP/OMC)에 속하는 무거운 하위작업(여러 출처 병렬 조사·깊은 리서치·왜인지\n"
+        "분석·test-first 코드)을 만나면 그 자리에서 레인 판정을 다시 하라. 단 3-4줄짜리\n"
+        "단순 확인은 직접 처리(과흡인 금지). citation-bound 문서(논문)의 자료 조사는\n"
+        "하되 OMC 병렬은 금지.\n\n"
+        "판정을 응답 맨 앞에 이 한 줄로 먼저 출력하라(매 턴, 누락 금지):\n"
+        "🧭 ROUTE → <oh-my-claudecode|superpowers|domain-skill|handle-directly> · <한 줄 근거>\n"
         "</omha-routing>"
     )
 
