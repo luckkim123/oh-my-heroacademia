@@ -4,6 +4,11 @@
   "description": "kimseungmin's personal harness marketplace — own-code plugins (oh-my-docs, ...). SP/OMC stay on their remote marketplaces.",
   "plugins": [
     {
+      "name": "oh-my-heroacademia",
+      "source": "./",
+      "description": "Meta-orchestration harness — a UserPromptSubmit hook reads the harness cards and the session routes each request to the right lane (superpowers / oh-my-claudecode / handle-directly)."
+    },
+    {
       "name": "oh-my-docs",
       "source": {
         "source": "github",
