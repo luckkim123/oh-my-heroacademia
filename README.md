@@ -11,10 +11,14 @@ and distributing personal plugins (e.g. oh-my-docs).
 
 ## Status
 
-v0.3.0 — **stage-1: plugin-hook lane routing.** omha is now also a Claude Code
-**plugin**: once installed, a `UserPromptSubmit` hook reads `cards/*.json` every
-turn and injects a lane-routing checkpoint. The Claude Code session (LLM) does the
-judgment; the hook only feeds it the cards. No server (removed in v0.2.0).
+v0.4.0 — **cross-lane re-routing + full 3-tier cascade in the hook.** The
+`UserPromptSubmit` hook now injects all three cascade tiers (was only tier-1/tier-3)
+plus a **re-routing obligation**: even while working inside a tier-2 domain skill
+(OMD, slides, …), if you hit a heavy subtask that belongs to a work-style lane
+(parallel research, deep investigation, test-first code), re-judge the lane on the
+spot. Trivial checks stay direct; citation-bound (paper) research is done but never
+with OMC parallelism. The Claude Code session (LLM) does the judgment; the hook only
+feeds it the cards. No server (removed in v0.2.0).
 
 ## Prerequisites
 
@@ -48,6 +52,15 @@ The hook injects this every turn; the session decides:
 2. **Installed domain skills** (oh-my-docs, ppt-academic, gen-image, …) — when no
    harness lane fits. Reached as Claude Code skills, not omha cards.
 3. **Claude Code direct** — when neither applies (trivial / single-file).
+
+**Re-routing obligation (v0.4.0).** Routing is not a one-time gate at entry. While
+inside a tier-2 domain skill, a heavy subtask that is essentially a work-style lane
+job — parallel multi-source research, deep investigation ("why did this happen"),
+test-first code — must trigger a fresh lane judgment right there, rather than being
+handled inline. The threshold matters: a 3-4 line fact check stays direct (no
+over-attraction), and citation-bound (paper) research is done but never via OMC
+parallelism (hallucination guard). This is what makes "OMD work that needs OMC for
+research" actually reach OMC instead of being done inline.
 
 The session names the lane; the *skill* inside that lane is picked by the lane's
 own plugin (OMC's keyword-detector, SP's using-superpowers), not by omha. omha
