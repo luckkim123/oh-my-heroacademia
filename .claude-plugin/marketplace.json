@@ -15,6 +15,14 @@
         "repo": "luckkim123/oh-my-docs"
       },
       "description": "Document-work harness (pptx/docx/xlsx/hwpx)"
+    },
+    {
+      "name": "oh-my-scholar",
+      "source": {
+        "source": "github",
+        "repo": "luckkim123/oh-my-scholar"
+      },
+      "description": "Academic paper harness (LaTeX .tex + .bib, concept notes .md) — treats paper writing like code with citation-integrity guardrails"
     }
   ]
 }
