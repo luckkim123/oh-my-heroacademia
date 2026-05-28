@@ -1,11 +1,9 @@
 [project]
 name = "omha"
-version = "0.3.0"
+version = "0.4.1"
 description = "oh-my-heroacademia — Claude Code plugin + harness card registry. A UserPromptSubmit hook reads cards/*.json and the session routes lanes (superpowers/OMC/handle-directly); no HTTP server."
-requires-python = ">=3.11"
-dependencies = [
-    "a2a-sdk>=0.3,<0.4",
-]
+requires-python = ">=3.9"
+dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest"]

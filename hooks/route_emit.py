@@ -33,7 +33,7 @@ def build_routing_context(cards_dir: Path) -> str:
         "단순 확인은 직접 처리(과흡인 금지). citation-bound 문서(논문)의 자료 조사는\n"
         "하되 OMC 병렬은 금지.\n\n"
         "판정을 응답 맨 앞에 이 한 줄로 먼저 출력하라(매 턴, 누락 금지):\n"
-        "🧭 ROUTE → <oh-my-claudecode|superpowers|domain-skill|handle-directly> · <한 줄 근거>\n"
+        "ROUTE → <oh-my-claudecode|superpowers|domain-skill|handle-directly> · <한 줄 근거>\n"
         "</omha-routing>"
     )
 
