@@ -11,14 +11,19 @@ and distributing personal plugins (e.g. oh-my-docs).
 
 ## Status
 
-v0.4.0 — **cross-lane re-routing + full 3-tier cascade in the hook.** The
-`UserPromptSubmit` hook now injects all three cascade tiers (was only tier-1/tier-3)
-plus a **re-routing obligation**: even while working inside a tier-2 domain skill
-(OMD, slides, …), if you hit a heavy subtask that belongs to a work-style lane
-(parallel research, deep investigation, test-first code), re-judge the lane on the
-spot. Trivial checks stay direct; citation-bound (paper) research is done but never
-with OMC parallelism. The Claude Code session (LLM) does the judgment; the hook only
-feeds it the cards. No server (removed in v0.2.0).
+v0.5.0 — **push channel added: PreToolUse cross-lane signal hook.** Cards now
+declare objective push signals (`triggers.extensions[]` / `triggers.skills[]`); a
+new `PreToolUse` hook (`Write|Edit|Skill` matcher) reads the *actual tool call
+payload* and surfaces lane mismatches the model might otherwise miss inline. Tone
+is advisory (asks the model to prepend a STAGE re-route line); the tool call is
+never blocked. 30-second same-lane cooldown prevents token-flood on consecutive
+operations; lane switches re-emit immediately.
+
+Together with the v0.4.0 pull channel (`UserPromptSubmit` ROUTE injection), omha
+now runs a **pull + push** routing model: the pull channel keeps the lane
+discipline visible every turn; the push channel catches mid-task transitions
+without relying on the model noticing them. Push is opt-in per card — registering
+a `triggers` block is the explicit signal "I want hard-pushed onto this lane."
 
 ## Prerequisites
 
@@ -70,20 +75,39 @@ routes lanes, not skills.
 
 | Path | Role |
 |------|------|
-| `hooks/route_emit.py` | `UserPromptSubmit` hook — reads `cards/*.json` (stdlib only, **no a2a-sdk**) and injects the lane-routing checkpoint every turn |
-| `cards/superpowers.json`, `cards/omc.json` | Work-style harness cards — the routing registry (single source of truth) |
-| `.claude-plugin/plugin.json` | Plugin manifest registering the hook (version omitted → commit-SHA versioning) |
+| `hooks/route_emit.py` | `UserPromptSubmit` hook (pull) — reads `cards/*.json` and injects the `<omha-routing>` lane checkpoint every turn |
+| `hooks/cross_lane_emit.py` | `PreToolUse` hook (push) — matches `Write\|Edit\|Skill` tool input against `cards/*.json` `triggers` and emits a STAGE re-route advisory on cross-lane transitions (30 s cooldown). Stdlib only |
+| `cards/superpowers.json`, `cards/omc.json` | Work-style harness cards — the routing registry (single source of truth). Each card may declare `triggers.{extensions, skills}` for push opt-in |
+| `.claude-plugin/plugin.json` | Plugin manifest registering both hooks (version omitted → commit-SHA versioning) |
 | `.claude-plugin/marketplace.json` | heroacademia marketplace (own-code plugins, e.g. oh-my-docs) |
-| `src/omha/registry.py` | `load_cards()` — A2A AgentCard validation, **dev/CI-time only** (the runtime hook does not depend on it) |
+| `src/omha/registry.py` | `load_cards()` — AgentCard validation incl. optional `triggers` block, **dev/CI-time only** (the runtime hooks do not depend on it) |
 
 ## How to add a harness
 
-Drop a new file at `cards/<name>.json`. The hook reads every `*.json` in `cards/`
-— no code change. The card's `name` + `description` are the lane signals the
-session reads.
+Drop a new file at `cards/<name>.json`. Both hooks read every `*.json` in `cards/`
+— no code change. The card's `name` + `description` are the pull-side lane
+signals the session reads. To opt the new harness into the push channel too, add
+a `triggers` block:
+
+```json
+{
+  "name": "oh-my-newthing",
+  "description": "...",
+  "skills": [ ... ],
+  "triggers": {
+    "extensions": [".foo"],
+    "skills": ["newthing-build", "newthing-verify"]
+  }
+}
+```
+
+A card without `triggers` (or with empty arrays) routes via pull only — the
+push hook stays silent for its tool calls.
 
 ## Design docs
 
-- `.../02_Decisions/2026-05-28-omha-stage1-plugin-hook-routing.md` (current — stage-1)
+- `.../02_Decisions/2026-05-29-omha-self-rerouting-design.md` (current — push channel via PreToolUse)
+- `.../02_Decisions/2026-05-28-omha-cross-lane-routing-design.md` (cross-lane re-routing obligation — v0.4.0)
+- `.../02_Decisions/2026-05-28-omha-stage1-plugin-hook-routing.md` (stage-1)
 - `.../02_Decisions/2026-05-28-omha-redesign-cards-not-server.md` (v2 — cards-not-server)
 - `.../02_Decisions/2026-05-27-omha-design.md` (v1, server era — superseded)

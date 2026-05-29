@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.0 — 2026-05-29
+### Added
+- **Push channel: `PreToolUse` hook for cross-lane signal detection.** A new `hooks/cross_lane_emit.py` runs on every `Write` / `Edit` / `Skill` tool call, reads `cards/*.json` `triggers` blocks, and emits a hard-toned advisory envelope when the tool target maps to a lane different from what's currently in flight. Tool calls are never blocked — the model sees the advisory in `hookSpecificOutput.additionalContext` and is asked to prepend a STAGE re-route line. Directly addresses the v0.4.0 pull-side gap: even with "re-routing obligation" written into `<omha-routing>`, the model can miss mid-task transitions when context grows long. The push channel turns that from a self-discipline rule into an objective hook firing.
+- **`triggers` block on AgentCard.** Cards may now declare `triggers.extensions[]` and `triggers.skills[]` — the push hook's opt-in registry. Backwards-compatible: cards without `triggers` route via pull only (push stays silent). SP/OMC cards now declare their characteristic skill names (writing-plans, test-driven-development, ultrawork, ralph, …). Extensions list is empty on work-style lanes by design — file extensions belong to domain cards (OMD/OMS/…).
+- **Stateless 30-second same-lane cooldown** via `/tmp/omha_last_push.json`. Five consecutive `.pptx` writes inside an OMD task emit once, not five times (no token-flood). A lane switch mid-stream re-emits immediately — the transition is the strong signal worth surfacing. Fail-open on corrupt JSON.
+- Tests: 30 new across hook + integration (signal extraction, lane matching, cooldown, fail-open, 4 plan §7.2 scenarios A/B/C/D, real SP/OMC card e2e through the hook). 11→47 green.
+
+### Changed
+- `src/omha/registry.py`: `AgentCard` gains an optional `triggers: AgentTriggers` field (also dev/CI-time only; the runtime hooks read cards with stdlib `json.loads`).
+- `.claude-plugin/plugin.json`: `hooks.PreToolUse` registered alongside the existing `UserPromptSubmit`. Matcher `Write|Edit|Skill` only — `Read` floods (routine scans), `Bash` would need command parsing.
+
+### Verification
+- pytest: 47 green on Python 3.9 (was 11; +36 across schema, hook unit, plugin manifest, integration scenarios).
+- Hook is stdlib-only — `test_hook_has_no_third_party_imports` enforces it.
+- Fail-open paths covered: missing cards dir, corrupt cooldown JSON, garbage stdin, missing `tool_input` keys → exit 0 silent (never blocks a tool call).
+- Live `claude -p` validation deferred to the install/marketplace cycle (separate session); the integration tests fully cover the four user-facing scenarios with fixture cards, so the mechanism is proven before deploy.
+
+### Notes
+- **Push is opt-in per card.** A card without `triggers` (legacy or by choice) gets pull routing only. Local skills not declared in any card stay in pull's domain — the model still sees them via the skill's own SKILL.md.
+- SP/OMC cards declare push `skills` but no `extensions` — extensions are a *domain* concept (which file format) and SP/OMC are *work-style* lanes. Real domain push (OMD `.pptx`, OMS `.tex`, …) requires those plugins to ship cards with `triggers.extensions`; that's a separate, plugin-side change.
+- Python 3.10 union syntax (`X | None`) avoided; `Optional[X]` used throughout for 3.9 compatibility (the registry promise).
+- Design: `2026-05-29-omha-self-rerouting-design.md` (decisions + dialogue trail). Execution plan: `2026-05-29-omha-self-rerouting-execution.md`.
+
 ## 0.4.1 — 2026-05-28
 ### Changed
 - **a2a-sdk dependency removed — omha is now fully dependency-free.** `0.3.0` declared "zero runtime deps — no a2a-sdk", but `src/omha/registry.py` still did `from a2a.types import AgentCard`, so on a Python 3.9 box (a2a-sdk requires ≥3.10) test collection failed. `registry.py` now validates cards with stdlib `dataclasses` (same `.name`/`.skills[].tags|examples` API the tests use), so the declared intent is realized in code. `pyproject.toml`: `dependencies = []`, `requires-python = ">=3.9"`.
