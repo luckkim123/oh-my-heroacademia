@@ -39,6 +39,18 @@ class AgentSkill:
 
 
 @dataclass
+class AgentTriggers:
+    """Optional push-routing signals consumed by cross_lane_emit.py PreToolUse hook.
+
+    Cards declare what concrete tool-call signals (file extensions, skill names)
+    map to their lane. The hook reads these — extension/skill lookup is the
+    objective channel that complements the model's pull-side judgment.
+    """
+    extensions: list = field(default_factory=list)
+    skills: list = field(default_factory=list)
+
+
+@dataclass
 class AgentCard:
     name: str
     description: str
@@ -48,18 +60,24 @@ class AgentCard:
     default_input_modes: list
     default_output_modes: list
     skills: list = field(default_factory=list)
+    triggers: AgentTriggers = field(default_factory=AgentTriggers)
 
     @classmethod
     def model_validate(cls, data: dict) -> "AgentCard":
         missing = [k for k in _CARD_REQUIRED if k not in data]
         if missing:
             raise ValueError(f"card missing required field(s): {missing}")
+        t = data.get("triggers", {})
         return cls(
             name=data["name"], description=data["description"], url=data["url"],
             version=data["version"], capabilities=data["capabilities"],
             default_input_modes=data["default_input_modes"],
             default_output_modes=data["default_output_modes"],
             skills=[AgentSkill.from_dict(s) for s in data["skills"]],
+            triggers=AgentTriggers(
+                extensions=list(t.get("extensions", [])),
+                skills=list(t.get("skills", [])),
+            ),
         )
 
 

@@ -20,5 +20,9 @@
        "정말 다 됐는지 증거로 검증",
        "어떤 방향이 나을지 비교 (no direction yet)"
      ]}
-  ]
+  ],
+  "triggers": {
+    "extensions": [],
+    "skills": ["writing-plans", "test-driven-development", "verification-before-completion", "subagent-driven-development", "systematic-debugging", "requesting-code-review", "receiving-code-review", "executing-plans", "brainstorming"]
+  }
 }

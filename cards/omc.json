@@ -21,5 +21,9 @@
        "성능이 왜 느린지 분석만, 고치진 말고",
        "clarify my requirements before building / scope this lightly"
      ]}
-  ]
+  ],
+  "triggers": {
+    "extensions": [],
+    "skills": ["ultrawork", "ralph", "autopilot", "team", "ralplan", "ultraqa", "ultragoal", "ultrapilot", "autoresearch"]
+  }
 }
