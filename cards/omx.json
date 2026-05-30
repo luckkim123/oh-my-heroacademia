@@ -1,0 +1,28 @@
+{
+  "name": "oh-my-experiments",
+  "description": "Experiment-analysis & design lane. Route here when the work is about ANALYZING experiment/training RESULTS or DESIGNING THE NEXT EXPERIMENT: compare runs, read eval/training curves, diagnose why a run regressed, propose the next config, run a semi-autonomous analyze->design->eval loop. Governs HOW you work on experiments — NOT writing the model code itself (that is superpowers), NOT generic parallel throughput (that is oh-my-claudecode).",
+  "url": "http://localhost:8973/omx",
+  "version": "0.1.0",
+  "capabilities": {},
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "skills": [
+    {"id": "experiment-analysis", "name": "experiment-analysis-lane",
+     "description": "Signals that route to oh-my-experiments (session then picks exp-init/analyze/design/loop).",
+     "tags": ["experiment", "analysis", "eval", "run-comparison", "next-experiment",
+              "training-curve", "regression", "실험", "분석", "평가", "런비교", "다음실험"],
+     "examples": [
+       "analyze these N training runs and tell me what changed",
+       "이 run들 분석하고 다음 실험 설계해줘",
+       "why did this run regress vs baseline — diagnose from the curves",
+       "eval 돌리고 plot 보여줘",
+       "compare run A and run B at the same iteration",
+       "set up the experiment-analysis infra for this research (exp-init)",
+       "퇴근할 거니까 알아서 분석하고 다음 실험까지 돌려놔"
+     ]}
+  ],
+  "triggers": {
+    "extensions": [],
+    "skills": ["exp-init", "exp-analyze", "exp-design", "exp-loop"]
+  }
+}
