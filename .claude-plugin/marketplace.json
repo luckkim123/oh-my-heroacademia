@@ -31,6 +31,14 @@
         "repo": "luckkim123/oh-my-project"
       },
       "description": "Project-folder management & evolution harness — knows your local directory like a second brain. Ships generic, specializes to your project the more you use it (structure/naming rules, safe file organize, dataset checksum/split/lineage tracking, self-learning into .omp/)"
+    },
+    {
+      "name": "oh-my-experiments",
+      "source": {
+        "source": "github",
+        "repo": "luckkim123/oh-my-experiments"
+      },
+      "description": "Experiment-analysis & design harness for RL/ML research — analyze training runs, diagnose regressions, design the next experiment, and run a semi-autonomous analyze-design-eval loop over .omx/ state"
     }
   ]
 }
