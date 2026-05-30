@@ -23,6 +23,14 @@
         "repo": "luckkim123/oh-my-scholar"
       },
       "description": "Academic paper harness (LaTeX .tex + .bib, concept notes .md) — treats paper writing like code with citation-integrity guardrails"
+    },
+    {
+      "name": "oh-my-project",
+      "source": {
+        "source": "github",
+        "repo": "luckkim123/oh-my-project"
+      },
+      "description": "Project-folder management & evolution harness — knows your local directory like a second brain. Ships generic, specializes to your project the more you use it (structure/naming rules, safe file organize, dataset checksum/split/lineage tracking, self-learning into .omp/)"
     }
   ]
 }
