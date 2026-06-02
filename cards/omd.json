@@ -1,0 +1,29 @@
+{
+  "name": "oh-my-docs",
+  "lane_type": "domain",
+  "description": "Document DOMAIN (not a work-style lane). Route here FIRST whenever the work product is a deliverable document — .pptx / .docx / .xlsx / .hwpx: intake, standardize (extract a style spec), plan, build, inspect, verify, revise, translate. Because the domain is unambiguous, this takes precedence over the work-style lanes (omc/sp/omx): document work enters omd, which then picks the exact docs-* STAGE and the right format card (references/formats/<format>.md is the single source of truth for tools/pitfalls/formulas). Heavy SUB-tasks inside omd (multi-source research, why-analysis, test-first tooling code) may still re-route to omc/sp.",
+  "url": "http://localhost:8973/omd",
+  "version": "0.1.0",
+  "capabilities": {},
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "skills": [
+    {"id": "document", "name": "document-domain",
+     "description": "Representative signals that route to oh-my-docs (the session then picks the exact docs-* STAGE).",
+     "tags": ["pptx", "docx", "xlsx", "hwpx", "slide", "presentation", "deck", "발표자료", "문서", "슬라이드", "양식", "보고서", "공문서"],
+     "examples": [
+       "make / build a .pptx / .docx deck",
+       "발표자료 만들어 / 슬라이드 생성 / 보고서 작성",
+       "extract a common style spec from existing documents",
+       "우리 랩 발표 양식 추출 / 표준 양식",
+       "convert .pptx to PDF / 납품본 변환",
+       "review / inspect this presentation",
+       "이 PDF로 디펜스 자료 통째로 만들어",
+       "verify the final document (integrity + visual proofread)"
+     ]}
+  ],
+  "triggers": {
+    "extensions": [".pptx", ".docx", ".xlsx", ".hwpx"],
+    "skills": ["docs-intake", "docs-standardize", "docs-plan", "docs-build", "docs-inspect", "docs-verify", "docs-revise", "docs-translate", "docs-convert", "docs-learn", "docs-pilot"]
+  }
+}

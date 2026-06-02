@@ -1,5 +1,6 @@
 {
   "name": "oh-my-claudecode",
+  "lane_type": "work-style",
   "description": "Throughput & autonomy lane. Route here when the work is about SCALE or RUNNING ON ITS OWN rather than per-line correctness: many independent edits at once, workers coordinating on a shared task list, hands-off lifecycle from a short brief, looping until tests pass, read-only 'why did this happen' investigation (no fix), light scoping, or research/knowledge ops. It governs HOW you work — NOT a document/slide/image domain (those are installed skills), and NOT rigorous test-first/verify-before-done correctness work (that is superpowers).",
   "url": "http://localhost:8973/omc",
   "version": "0.2.0",

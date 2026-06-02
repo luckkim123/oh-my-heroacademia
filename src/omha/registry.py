@@ -61,6 +61,12 @@ class AgentCard:
     default_output_modes: list
     skills: list = field(default_factory=list)
     triggers: AgentTriggers = field(default_factory=AgentTriggers)
+    # "work-style" (omc/sp/omx — HOW you work) or "domain" (oms/omd — WHAT
+    # product). The route cascade orders domain BEFORE work-style so an
+    # unambiguous domain (paper .tex / document .pptx) always enters its own
+    # harness first. Defaults to "work-style" for backward compatibility with
+    # any card that predates this field. (2026-06-02 domain-first design.)
+    lane_type: str = "work-style"
 
     @classmethod
     def model_validate(cls, data: dict) -> "AgentCard":
@@ -78,6 +84,7 @@ class AgentCard:
                 extensions=list(t.get("extensions", [])),
                 skills=list(t.get("skills", [])),
             ),
+            lane_type=data.get("lane_type", "work-style"),
         )
 
 

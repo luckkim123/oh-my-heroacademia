@@ -13,21 +13,47 @@ CARDS_DIR = Path(__file__).resolve().parent.parent / "cards"
 
 
 def build_routing_context(cards_dir: Path) -> str:
-    lanes = []
+    """Inject the lane-routing checkpoint.
+
+    Cards split into two kinds by their lane_type field:
+      · domain     (oms/omd — WHAT product: paper .tex/.bib, document .pptx…)
+      · work-style (omc/sp/omx — HOW you work: throughput, discipline, experiments)
+
+    The cascade is DOMAIN-FIRST (2026-06-02 design): when the work product is an
+    unambiguous domain, route into that domain harness BEFORE the work-style
+    lanes — so paper work ALWAYS enters oms, document work enters omd. Only when
+    no domain matches do the work-style lanes apply. This replaces the older
+    "SP/OMC-only, domains are 2nd-tier installed skills" cascade.
+    """
+    domain_lanes, work_lanes = [], []
+    verdict_names = []
     for path in sorted(Path(cards_dir).glob("*.json")):
         d = json.loads(path.read_text())
-        lanes.append(f"- {d['name']}: {d['description']}")
-    body = "\n".join(lanes)
+        line = f"- {d['name']}: {d['description']}"
+        if d.get("lane_type") == "domain":
+            domain_lanes.append(line)
+        else:
+            work_lanes.append(line)
+        verdict_names.append(d["name"])
+    domain_body = "\n".join(domain_lanes) if domain_lanes else "  (없음)"
+    work_body = "\n".join(work_lanes)
+    verdict_enum = "|".join(verdict_names)
     return (
         "<omha-routing>\n"
         "3+ 액션/복수파일 요청이면, 아래 하네스 카드로 어느 레인인지 한 줄 판정·선언하라.\n"
         "레인만 정하라 — 레인 안 스킬 콕집기는 해당 plugin 이 한다.\n\n"
-        f"{body}\n\n"
-        "폴백 캐스케이드 (위에서부터, 맞는 게 없으면 다음):\n"
-        "· 1순위 — 위 하네스 레인(작업방식: SP/OMC) 중 적합한 것.\n"
-        "· 2순위 — 적합 레인 없음 → 설치된 도메인 스킬(문서=OMD, 슬라이드·이미지 등). 이건 레인이 아니라 도메인 처리기.\n"
+        "■ 도메인 하네스 (WHAT — 만드는 산출물이 정함. 명확하면 *먼저* 여기로):\n"
+        f"{domain_body}\n\n"
+        "■ 작업방식 레인 (HOW — 일하는 방식이 정함):\n"
+        f"{work_body}\n\n"
+        "판정 캐스케이드 (도메인 우선 — 위에서부터):\n"
+        "· 1순위 — 산출물 도메인이 명확한가? (논문 .tex/.bib → oh-my-scholar, 문서\n"
+        "  .pptx/.docx → oh-my-docs). 명확하면 무조건 그 도메인 하네스로 진입한다.\n"
+        "  특히 논문 작업은 *반드시* oh-my-scholar 로 — 직접 수행하거나 OMC 병렬로\n"
+        "  때우지 말 것(citation 무결성 가드가 oms 안에만 있다).\n"
+        "· 2순위 — 도메인이 안 잡히면 작업방식 레인(SP/OMC/OMX) 중 적합한 것.\n"
         "· 3순위 — 그것도 없음 → handle-directly(직접 수행).\n\n"
-        "재라우팅 의무: 2순위 도메인 스킬 안에서 작업 중이라도, 본질적으로 작업방식\n"
+        "재라우팅 의무: 도메인 하네스 안에서 작업 중이라도, 본질적으로 작업방식\n"
         "레인(SP/OMC)에 속하는 무거운 하위작업(여러 출처 병렬 조사·깊은 리서치·왜인지\n"
         "분석·test-first 코드)을 만나면 그 자리에서 레인 판정을 다시 하라. 단 3-4줄짜리\n"
         "단순 확인은 직접 처리(과흡인 금지). citation-bound 문서(논문)의 자료 조사는\n"
@@ -40,7 +66,7 @@ def build_routing_context(cards_dir: Path) -> str:
         "oh-my-claudecode:sciomc. 단 3-4줄 단순 lookup은 직접(과흡인 금지),\n"
         "citation-bound 논문 자료조사는 OMC 병렬 금지(위 가드 그대로).\n\n"
         "판정을 응답 맨 앞에 이 한 줄로 먼저 출력하라(매 턴, 누락 금지):\n"
-        "ROUTE → <oh-my-claudecode|superpowers|oh-my-experiments|domain-skill|handle-directly> · <한 줄 근거>\n"
+        f"ROUTE → <{verdict_enum}|handle-directly> · <한 줄 근거>\n"
         "</omha-routing>"
     )
 

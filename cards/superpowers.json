@@ -1,5 +1,6 @@
 {
   "name": "superpowers",
+  "lane_type": "work-style",
   "description": "Discipline lane. Route here when CORRECTNESS governs and getting it wrong is expensive: writing code test-first, finding a bug's root cause before fixing, verifying a 'done' claim with evidence, reviewing a specific diff, or turning a chosen direction into a rigorous step-by-step plan. It governs HOW you work on code — NOT a document/slide/image domain (those are installed skills), and NOT raw parallel throughput or autonomous looping (that is oh-my-claudecode).",
   "url": "http://localhost:8973/superpowers",
   "version": "0.2.0",

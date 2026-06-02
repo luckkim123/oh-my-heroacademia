@@ -1,0 +1,30 @@
+{
+  "name": "oh-my-scholar",
+  "lane_type": "domain",
+  "description": "Academic paper DOMAIN (not a work-style lane). Route here FIRST whenever the work product is an academic paper — LaTeX .tex / .bib, related-work survey, concept notes, outline, draft, inspect, venue mock-review, verify, revise. Because the domain is unambiguous, this takes precedence over the work-style lanes (omc/sp/omx): paper work ALWAYS enters oms, which then picks the exact scholar-* STAGE. The citation-integrity guardrails (no fabricated citations, no embedding retrieval, draft is single-careful never parallel) only exist inside oms — so paper work must not be handled directly or run as a raw OMC parallel sweep. Heavy SUB-tasks inside oms (multi-source literature search, test-first tooling code) may still re-route to omc/sp, but citation-bound source research must NOT use OMC parallel.",
+  "url": "http://localhost:8973/oms",
+  "version": "0.1.0",
+  "capabilities": {},
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "skills": [
+    {"id": "academic-paper", "name": "academic-paper-domain",
+     "description": "Representative signals that route to oh-my-scholar (the session then picks the exact scholar-* STAGE).",
+     "tags": ["paper", "thesis", "latex", "tex", "bib", "citation", "venue", "related-work", "outline", "draft", "논문", "학위논문", "초안", "관련연구", "인용", "투고"],
+     "examples": [
+       "write / draft a paper section (.tex)",
+       "논문 써줘 / 논문 초안 작성 / 섹션 초안",
+       "survey related work and find the research gap",
+       "관련연구 조사 / 선행연구 gap 찾아",
+       "outline the paper structure / story arc",
+       "내 논문 IROS/NeurIPS 기준으로 모의심사 받고 싶어",
+       "verify the .tex/.bib (compile, citations, numbers)",
+       "인용 검증 / 컴파일 체크 / 논문 게이트",
+       "start a new paper (bootstrap the directory + venue)"
+     ]}
+  ],
+  "triggers": {
+    "extensions": [".tex", ".bib"],
+    "skills": ["scholar-init", "scholar-research", "scholar-deepen", "scholar-ideate", "scholar-outline", "scholar-draft", "scholar-inspect", "scholar-mock-review", "scholar-verify", "scholar-revise", "scholar-learn", "scholar-pilot"]
+  }
+}
