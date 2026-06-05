@@ -11,6 +11,12 @@ and distributing personal plugins (e.g. oh-my-docs).
 
 ## Status
 
+v0.6.0 — **three-axis cascade.** Routing grows from work-style-only into
+**governance (omp) → content domains (oms/omd) → work-style (omc/sp/omx)**.
+oh-my-project joins as a `governance` lane (judged first, so structure/placement
+work stops falling through to handle-directly); oms/omd become first-class
+`domain` cards; omx joins as a 3rd work-style lane. See the routing model below.
+
 v0.5.0 — **push channel added: PreToolUse cross-lane signal hook.** Cards now
 declare objective push signals (`triggers.extensions[]` / `triggers.skills[]`); a
 new `PreToolUse` hook (`Write|Edit|Skill` matcher) reads the *actual tool call
@@ -49,17 +55,25 @@ With neither lane installed, omha degrades to "handle-directly" for everything �
 harmless, but pointless. Installing one lane (just SP, or just OMC) is fine; omha
 will simply never route to the missing one.
 
-## Routing model — 3-tier fallback cascade
+## Routing model — three-axis cascade
 
-The hook injects this every turn; the session decides:
+The hook injects this every turn; the session decides, top-down:
 
-1. **SP / OMC** (work-style harnesses, this registry's cards) — pick the fitting lane.
-2. **Installed domain skills** (oh-my-docs, ppt-academic, gen-image, …) — when no
-   harness lane fits. Reached as Claude Code skills, not omha cards.
-3. **Claude Code direct** — when neither applies (trivial / single-file).
+0. **Governance (omp)** — is this about *where* files belong / whether the tree
+   obeys its rules (placement, relocation, naming, dataset tracking, `.omp`)?
+   This axis is orthogonal to the content domains (the same `.pptx` is omd when
+   you author it, omp when you ask whether it sits in the right folder), so it is
+   judged first — else structure work falls through to handle-directly.
+1. **Content domains (oms / omd)** — is the work product an academic paper
+   (.tex/.bib → oms) or a deliverable document (.pptx/.docx/.xlsx/.hwpx → omd)?
+   Paper work *must* enter oms, where the citation-integrity guard lives.
+2. **Work-style lanes (omc / sp / omx)** — when no domain fits, pick by *how* you
+   work: throughput/autonomy (omc), test-first discipline (sp), experiment
+   analysis/design (omx).
+3. **Claude Code direct** — when none apply (trivial / single-file).
 
 **Re-routing obligation (v0.4.0).** Routing is not a one-time gate at entry. While
-inside a tier-2 domain skill, a heavy subtask that is essentially a work-style lane
+inside a content-domain lane, a heavy subtask that is essentially a work-style lane
 job — parallel multi-source research, deep investigation ("why did this happen"),
 test-first code — must trigger a fresh lane judgment right there, rather than being
 handled inline. The threshold matters: a 3-4 line fact check stays direct (no

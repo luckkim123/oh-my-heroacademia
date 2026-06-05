@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.6.0 — 2026-06-05
+A routing-model release: the cascade grows from "work-style lanes only" into a
+three-axis model — **governance (omp) → content domains (oms/omd) → work-style
+(omc/sp/omx)** — and three sibling harnesses (omx, oms, omd, omp) become
+first-class routing cards instead of demoted 2nd-tier installed skills.
+
+### Added
+- **Governance axis — `cards/omp.json` (lane_type `governance`), judged FIRST.**
+  oh-my-project (project-folder structure / placement / `.omp` rules) was absent
+  from the omha cascade entirely: the ROUTE enum is generated from `cards/*.json`
+  names, so with no card, structure/placement work had no lane and fell through to
+  handle-directly. Governance is an axis *orthogonal* to the content domains — the
+  same `.pptx` is omd when you author its content but omp when you ask whether it
+  sits in the right folder — so a two-box (domain vs work-style) split could not
+  place it. The card draws the omd/oms boundary explicitly (content authoring =
+  oms/omd, folder placement/rules = omp) and names the `.omp/` index-coherence and
+  safe-fileops guards that live only inside omp.
+- **`oh-my-experiments` (omx) as a 3rd work-style lane** — `cards/omx.json`,
+  glob-discovered by `route_emit.py` and `registry.py`, added to the ROUTE verdict
+  enum. Distribution stays in OMX's own `omx` marketplace (no dual-publish here).
+- **Domain-first routing cards — `cards/oms.json`, `cards/omd.json` (lane_type
+  `domain`).** Paper (.tex/.bib → oms) and document (.pptx/.docx/.xlsx/.hwpx → omd)
+  work is now enforced at the 1st tier instead of being a 2nd-tier installed-skill
+  fallthrough — so "paper work must always enter oms" (where the citation guard
+  lives) holds at the routing layer.
+- **Marketplace registrations**: `oh-my-project` and `oh-my-experiments` added as
+  github-source plugins alongside oh-my-docs / oh-my-scholar, so all siblings
+  install the same way.
+- **Re-routing clause: push heavy research to OMC** — the hook now advises that
+  heavy literature / external-repo / library research be delegated to OMC research
+  skills (`external-context` for outward web/docs/GitHub, `sciomc` for deep target
+  analysis) rather than a single ad-hoc search. Injects a routing *rule*, not card
+  knowledge (no-drift principle holds); preserves the "no OMC parallel for
+  citation-bound paper research" guard.
+
+### Changed
+- **`hooks/route_emit.py`: 3-way `lane_type` split** (governance / domain /
+  work-style). Cards are sorted into three boxes; the cascade is rewritten
+  governance-first → domain → work-style. Unknown `lane_type` still falls to
+  work-style, so the existing cards stay valid (backward compatible).
+- **`cards/{omc,superpowers,omx}.json` → `lane_type: work-style`;
+  `cards/{oms,omd}.json` → `domain`; `cards/omp.json` → `governance`.**
+- **`registry.py`: `AgentCard` reads `lane_type`** (default `work-style` for
+  backward compat).
+- **`cards/omx.json` description = commitment to act, not a label** — declaring
+  `ROUTE → oh-my-experiments` now obliges actually invoking an omx skill / the
+  `.omx` engine, symmetric with how omc/sp enforce route→invoke (closes the
+  hand-reading-TensorBoard anti-pattern, caught twice 2026-06-05).
+- **README "Routing model"** rewritten from the old 3-tier (SP/OMC → installed
+  domain skills → direct) to the governance→domain→work-style cascade with all
+  current lanes named.
+
+### Verification
+- `route_emit.py` emits a valid `UserPromptSubmit` envelope; the ROUTE enum now
+  includes `oh-my-project`, and the governance box renders above the domain box
+  (checked by running the hook on `{}` stdin).
+- Domain-first routing tests: `tests/test_domain_first_routing.py` (7) — domain
+  cards present, lane_type assignment, extension triggers, domain-first context.
+- 54 green at the domain-first cascade commit (`5793265`).
+
+### Notes
+- omp was already published (`luckkim123/oh-my-project`) and routed via its own
+  `UserPromptSubmit` STAGE hook before this release; what 0.6.0 adds is its
+  *omha-level* lane card, so the meta-router stops dropping governance work to
+  handle-directly.
+- The cache copy is pinned to a `gitCommitSha` in `installed_plugins.json`;
+  picking up these cards on a machine requires a plugin update/reinstall (the
+  marketplace `git pull` alone updates the marketplace mirror, not the live cache).
+
 ## 0.5.0 — 2026-05-29
 ### Added
 - **Push channel: `PreToolUse` hook for cross-lane signal detection.** A new `hooks/cross_lane_emit.py` runs on every `Write` / `Edit` / `Skill` tool call, reads `cards/*.json` `triggers` blocks, and emits a hard-toned advisory envelope when the tool target maps to a lane different from what's currently in flight. Tool calls are never blocked — the model sees the advisory in `hookSpecificOutput.additionalContext` and is asked to prepend a STAGE re-route line. Directly addresses the v0.4.0 pull-side gap: even with "re-routing obligation" written into `<omha-routing>`, the model can miss mid-task transitions when context grows long. The push channel turns that from a self-discipline rule into an objective hook firing.
