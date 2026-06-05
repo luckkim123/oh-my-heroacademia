@@ -1,0 +1,29 @@
+{
+  "name": "oh-my-project",
+  "lane_type": "governance",
+  "description": "Project-structure GOVERNANCE lane (a third axis — NOT a content domain, NOT a work-style). Route here whenever the work is about WHERE files belong and whether the folder tree obeys its rules, rather than producing the content of any file: classify/place a file under the right folder, detect & safely relocate rule-violating files, codify or update structure/naming rules, register datasets (checksum/split/lineage), bootstrap or audit a project's .omp/ SSOT. The axis is orthogonal to oms/omd: the SAME .pptx is omd when you author its content, omp when you ask whether it sits in the correct folder. Because governance is orthogonal, it is judged FIRST — before both the content domains (oms/omd) and the work-style lanes (omc/sp/omx) — so structure work is never missed and never falls through to handle-directly. The .omp/ index-coherence and safe-fileops guards (move = copy→verify→delete, propose-before-execute, keep STRUCTURE.md/rules.json/DATASETS.md in sync) live only inside omp — so folder governance must not be handled directly or as a raw OMC parallel sweep. Heavy SUB-tasks inside omp (multi-source research, test-first tooling code) may still re-route to omc/sp.",
+  "url": "http://localhost:8973/omp",
+  "version": "0.1.0",
+  "capabilities": {},
+  "default_input_modes": ["text/plain"],
+  "default_output_modes": ["text/plain"],
+  "skills": [
+    {"id": "project-governance", "name": "project-governance-lane",
+     "description": "Signals that route to oh-my-project (the session then picks the exact omp-* STAGE: init/codify/organize/dataset/doc/learn/audit).",
+     "tags": ["structure", "folder", "placement", "relocate", "naming-rule", "dataset-tracking", "checksum", "split", "lineage", ".omp", "audit", "구조", "폴더", "재배치", "정리", "명명규칙", "데이터셋추적", "초기화", "감사"],
+     "examples": [
+       "is this file in the right folder? / 이 파일 제자리에 있어?",
+       "이 논문 작업물들이 vault/workspace 분류 기준에 맞아? 어긋난 거 정리해줘",
+       "detect rule-violating files and relocate them safely (organize)",
+       "구조·명명 규칙 성문화 / rules.json 갱신 (codify)",
+       "register this dataset — checksum, split, lineage (dataset)",
+       "이 프로젝트 폴더 스캔해서 .omp 초기화해줘 (init)",
+       "audit this folder against its rules — read-only PASS/FAIL (audit)",
+       "이 폴더 통째로 규칙대로 정리·진화해줘 (omp-pilot)"
+     ]}
+  ],
+  "triggers": {
+    "extensions": [],
+    "skills": ["omp-init", "omp-codify", "omp-organize", "omp-dataset", "omp-doc", "omp-learn", "omp-audit", "omp-pilot", "omp-doctor"]
+  }
+}

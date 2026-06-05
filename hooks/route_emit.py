@@ -15,26 +15,34 @@ CARDS_DIR = Path(__file__).resolve().parent.parent / "cards"
 def build_routing_context(cards_dir: Path) -> str:
     """Inject the lane-routing checkpoint.
 
-    Cards split into two kinds by their lane_type field:
+    Cards split into three kinds by their lane_type field:
+      · governance (omp — WHERE files belong / does the tree obey its rules)
       · domain     (oms/omd — WHAT product: paper .tex/.bib, document .pptx…)
       · work-style (omc/sp/omx — HOW you work: throughput, discipline, experiments)
 
-    The cascade is DOMAIN-FIRST (2026-06-02 design): when the work product is an
-    unambiguous domain, route into that domain harness BEFORE the work-style
-    lanes — so paper work ALWAYS enters oms, document work enters omd. Only when
-    no domain matches do the work-style lanes apply. This replaces the older
-    "SP/OMC-only, domains are 2nd-tier installed skills" cascade.
+    The cascade is GOVERNANCE-FIRST, then DOMAIN, then work-style (2026-06-05
+    design). Governance is an axis ORTHOGONAL to the content domains: the same
+    .pptx is omd when you author its content but omp when you ask whether it sits
+    in the right folder. So structure/placement/rule work is judged BEFORE the
+    content domains (else it falls through to handle-directly — the bug this
+    fixes), domains are judged before the work-style lanes (paper work ALWAYS
+    enters oms, document work enters omd), and only when none match do the
+    work-style lanes apply.
     """
-    domain_lanes, work_lanes = [], []
+    governance_lanes, domain_lanes, work_lanes = [], [], []
     verdict_names = []
     for path in sorted(Path(cards_dir).glob("*.json")):
         d = json.loads(path.read_text())
         line = f"- {d['name']}: {d['description']}"
-        if d.get("lane_type") == "domain":
+        lane_type = d.get("lane_type")
+        if lane_type == "governance":
+            governance_lanes.append(line)
+        elif lane_type == "domain":
             domain_lanes.append(line)
         else:
             work_lanes.append(line)
         verdict_names.append(d["name"])
+    governance_body = "\n".join(governance_lanes) if governance_lanes else "  (없음)"
     domain_body = "\n".join(domain_lanes) if domain_lanes else "  (없음)"
     work_body = "\n".join(work_lanes)
     verdict_enum = "|".join(verdict_names)
@@ -42,11 +50,17 @@ def build_routing_context(cards_dir: Path) -> str:
         "<omha-routing>\n"
         "3+ 액션/복수파일 요청이면, 아래 하네스 카드로 어느 레인인지 한 줄 판정·선언하라.\n"
         "레인만 정하라 — 레인 안 스킬 콕집기는 해당 plugin 이 한다.\n\n"
+        "■ 거버넌스 하네스 (WHERE — 파일이 어디 속하나·트리가 규칙 지키나. 산출물 축과 직교):\n"
+        f"{governance_body}\n\n"
         "■ 도메인 하네스 (WHAT — 만드는 산출물이 정함. 명확하면 *먼저* 여기로):\n"
         f"{domain_body}\n\n"
         "■ 작업방식 레인 (HOW — 일하는 방식이 정함):\n"
         f"{work_body}\n\n"
-        "판정 캐스케이드 (도메인 우선 — 위에서부터):\n"
+        "판정 캐스케이드 (거버넌스 → 도메인 → 작업방식, 위에서부터):\n"
+        "· 0순위 — 구조/배치/규칙 문제인가? (파일이 제자리야? 재배치해? 명명·dataset·\n"
+        "  .omp 규칙?) 그렇다면 oh-my-project. 산출물 축과 직교하므로 *가장 먼저* 본다 —\n"
+        "  같은 .pptx라도 '내용을 만들면' omd, '제자리에 있나'면 omp. 구조 작업이\n"
+        "  도메인·작업방식으로 새서 handle-directly 로 떨어지는 것을 막는 단계.\n"
         "· 1순위 — 산출물 도메인이 명확한가? (논문 .tex/.bib → oh-my-scholar, 문서\n"
         "  .pptx/.docx → oh-my-docs). 명확하면 무조건 그 도메인 하네스로 진입한다.\n"
         "  특히 논문 작업은 *반드시* oh-my-scholar 로 — 직접 수행하거나 OMC 병렬로\n"
