@@ -11,13 +11,16 @@
     {"id": "experiment-analysis", "name": "experiment-analysis-lane",
      "description": "Signals that route to oh-my-experiments (session then picks exp-init/analyze/design/loop).",
      "tags": ["experiment", "analysis", "eval", "run-comparison", "next-experiment",
-              "training-curve", "regression", "실험", "분석", "평가", "런비교", "다음실험"],
+              "training-curve", "regression", "report", "write-up", "experiment-report",
+              "실험", "분석", "평가", "런비교", "다음실험", "리포트", "결과정리"],
      "examples": [
        "analyze these N training runs and tell me what changed",
+       "make a report on these runs / 이 런들 report 만들어줘",
        "이 run들 분석하고 다음 실험 설계해줘",
        "why did this run regress vs baseline — diagnose from the curves",
        "eval 돌리고 plot 보여줘",
        "compare run A and run B at the same iteration",
+       "결과 정리해서 리포트로 뽑아줘 (= exp-analyze report.md, not a hand-written summary)",
        "set up the experiment-analysis infra for this research (exp-init)",
        "퇴근할 거니까 알아서 분석하고 다음 실험까지 돌려놔"
      ]}
