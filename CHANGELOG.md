@@ -153,7 +153,7 @@ first-class routing cards instead of demoted 2nd-tier installed skills.
 
 ## 0.1.0 — 2026-05-27
 ### Added
-- omha A2A HTTP server (stage-1 판정형 router).
+- omha A2A HTTP server (stage-1 verdict-type router).
 - Declarative card registry (`cards/*.json` -> A2A AgentCard) — new harness = drop a JSON file.
 - 3 harness cards: superpowers + oh-my-claudecode (real), oh-my-docs (planned).
 - Endpoints: `/harnesses`, `/harness/{name}/.well-known/agent-card.json`, `POST /route`.
