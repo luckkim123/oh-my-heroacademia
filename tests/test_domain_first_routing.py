@@ -41,10 +41,13 @@ def _raw_cards():
 
 
 def test_every_card_declares_lane_type():
-    """Each card declares lane_type so the cascade can order domain before work-style."""
+    """Each card declares lane_type so the cascade can order governance -> domain
+    -> work-style. 'governance' (omp) is the 3rd axis added after this file's
+    original 2-way (domain/work-style) model; the assertion below must accept it
+    or omp.json fails the lint while route_emit/registry already handle it."""
     for stem, d in _raw_cards().items():
-        assert d.get("lane_type") in ("work-style", "domain"), \
-            f"{stem}.json must declare lane_type as 'work-style' or 'domain'"
+        assert d.get("lane_type") in ("governance", "domain", "work-style"), \
+            f"{stem}.json must declare lane_type as 'governance', 'domain', or 'work-style'"
 
 
 def test_domain_lane_type_assignment():
