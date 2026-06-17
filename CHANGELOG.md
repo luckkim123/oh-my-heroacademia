@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.7.0 — 2026-06-17
+An analyze-before-route release: the routing hook now asks for a one-shot
+requirements analysis *before* the ROUTE line, so the lane verdict and the work
+that follows are grounded in a decomposed reading of the request instead of a
+raw guess.
+
+### Added
+- **`ANALYZE → … then ROUTE` in `route_emit.py`.** The injected checkpoint now
+  instructs a requirements decomposition (목적 / 핵심 요구 / 제약 / 모호한 점)
+  to be emitted *before* the ROUTE line. Routing and execution are based on that
+  analysis — the goal is to finish in one pass instead of misreading the request
+  and burning tokens on a rollback.
+  - **Gated to 3+ actions / multi-file / ambiguous requests only.** Simple,
+    unambiguous 1–2 action requests skip ANALYZE and emit ROUTE directly — the
+    analysis itself costs output tokens, so forcing it on trivial asks would
+    invert the token-saving intent. Same gate omha already uses for the ROUTE
+    verdict.
+  - **Ambiguity halts before work.** If the `모호한 점` field is anything other
+    than "없음", the model must confirm with the user *before* proceeding to
+    ROUTE/execution — this is the actual lever that prevents misunderstand-then-redo.
+
 ## 0.6.0 — 2026-06-05
 A routing-model release: the cascade grows from "work-style lanes only" into a
 three-axis model — **governance (omp) → content domains (oms/omd) → work-style

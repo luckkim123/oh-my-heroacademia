@@ -42,3 +42,18 @@ def test_context_no_a2a_dependency():
     # route_emit 는 stdlib 만 import — a2a 미설치 환경에서도 import 성공
     src = (Path(__file__).parent.parent / "hooks" / "route_emit.py").read_text()
     assert "import a2a" not in src and "from a2a" not in src
+
+
+def test_context_emits_analyze_before_route(tmp_path):
+    """ROUTE 앞에 요구사항 분석(ANALYZE)을 먼저 출력하라는 지시가 있어야 한다.
+    사용자 의도: routing 전에 요구사항을 분석·검토해 한 번에 완료(되돌이 토큰 절약)."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane."}))
+    ctx = route_emit.build_routing_context(tmp_path)
+    assert "ANALYZE" in ctx                          # 분석 블록 존재
+    # 출력 순서가 ANALYZE → ROUTE 여야 (분석이 먼저)
+    assert ctx.index("ANALYZE") < ctx.index("ROUTE →")
+    # 게이트: 3+ 액션/모호할 때만 (간단 요청엔 안 띄움)
+    assert "3+" in ctx or "모호" in ctx
+    # 모호한 점이 있으면 작업 전 되묻는다는 강제
+    assert "모호" in ctx
