@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1 — 2026-06-17
+### Fixed
+- **ANALYZE/ROUTE output order made unambiguous.** The 0.7.0 instruction said
+  "emit ANALYZE before ROUTE" but every other routing block (`<oms-routing>`,
+  `<omd-routing>`, the omha body) says "emit ROUTE at the very front", and the
+  model resolved the conflict by putting ROUTE first and ANALYZE below it. The
+  closing instruction now explicitly states **ANALYZE sits above ROUTE** and that
+  this order overrides the "ROUTE at the front" wording when the gate applies.
+  Removed the ambiguous "맨 앞에 이 한 줄로" phrasing that fed the conflict.
+  Added a test asserting the explicit ordering clause is present.
+
 ## 0.7.0 — 2026-06-17
 An analyze-before-route release: the routing hook now asks for a one-shot
 requirements analysis *before* the ROUTE line, so the lane verdict and the work

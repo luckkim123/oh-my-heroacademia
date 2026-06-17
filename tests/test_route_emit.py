@@ -57,3 +57,16 @@ def test_context_emits_analyze_before_route(tmp_path):
     assert "3+" in ctx or "모호" in ctx
     # 모호한 점이 있으면 작업 전 되묻는다는 강제
     assert "모호" in ctx
+
+
+def test_context_forces_analyze_above_route_explicitly(tmp_path):
+    """순서 강제 문구가 명시적으로 있어야 한다. 'ROUTE 를 맨 앞에' 라는
+    다른 블록 문구와 충돌해 모델이 ROUTE 를 먼저 내는 회귀가 있었다 —
+    'ANALYZE 가 ROUTE 보다 위' 를 못박는 문구로 모순을 제거한다."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane."}))
+    ctx = route_emit.build_routing_context(tmp_path)
+    # 순서를 명시적으로 못박는 강제 문구
+    assert "ANALYZE 가 ROUTE 보다 위" in ctx or "ANALYZE 를 ROUTE 보다 먼저" in ctx
+    # 모호한 '맨 앞 ROUTE' 단독 지시가 없어야 (있으면 ANALYZE 와 충돌)
+    assert "맨 앞에 이 한 줄로" not in ctx
