@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.2 — 2026-06-17
+### Changed
+- **ANALYZE/ROUTE now render as a GFM blockquote.** The injected checkpoint
+  previously told the model to emit `ANALYZE →` as a plain line with `·`
+  middle-dot fields, which markdown does not parse as a list — the labels
+  collapsed into one indented blob and the block did not visually separate from
+  the answer body. The format instruction now asks for a `> **ANALYZE**` header
+  with `> - **label**:` bullets, and ROUTE on a `> **ROUTE →**` quoted line tied
+  into the same quote box via a blank `>` line, so ANALYZE+ROUTE read as one
+  bordered block distinct from the prose. No emoji (terminal Korean-width safe).
+  The `ROUTE →` substring is preserved inside the bold so the ordering test
+  (`ctx.index("ANALYZE") < ctx.index("ROUTE →")`) still holds — no test changes.
+
 ## 0.7.1 — 2026-06-17
 ### Fixed
 - **ANALYZE/ROUTE output order made unambiguous.** The 0.7.0 instruction said
