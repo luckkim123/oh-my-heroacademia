@@ -30,7 +30,7 @@
         "source": "github",
         "repo": "luckkim123/oh-my-project"
       },
-      "description": "Project-folder management & evolution harness — knows your local directory like a second brain. Ships generic, specializes to your project the more you use it (structure/naming rules, safe file organize, dataset checksum/split/lineage tracking, self-learning into .omp/)"
+      "description": "Project environment & structure governance harness — knows your local directory like a second brain. Ships generic, specializes to your project the more you use it (structure/naming rules, safe file organize, dataset checksum/split/lineage tracking, Docker environment governance — generate Dockerfile/compose into .omp/env/, image naming + inventory, anti-pattern audit with external-standard provenance, self-learning into .omp/)"
     },
     {
       "name": "oh-my-experiments",
