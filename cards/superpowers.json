@@ -1,7 +1,7 @@
 {
   "name": "superpowers",
   "lane_type": "work-style",
-  "description": "Discipline lane. Route here when CORRECTNESS governs and getting it wrong is expensive: writing code test-first, finding a bug's root cause before fixing, verifying a 'done' claim with evidence, reviewing a specific diff, or turning a chosen direction into a rigorous step-by-step plan. It governs HOW you work on code — NOT a document/slide/image domain (those are installed skills), and NOT raw parallel throughput or autonomous looping (that is oh-my-claudecode).",
+  "description": "Discipline-GATE lane — a NARROW escalation, NOT the default for code work. oh-my-claudecode is the default work-style lane for all coding; route HERE only when the operator EXPLICITLY wants a structural discipline gate that OMC cannot replicate: (a) executing a multi-task plan where EACH task needs a fresh implementer + a MANDATORY spec+quality reviewer before the next task starts (subagent-driven-development — sp's one irreplaceable mechanism), (b) test-first authoring where a test MUST be seen to fail before any production code (TDD Iron Law), or (c) a verification / peer-review gate on a SPECIFIC diff or a 'done' claim. Do NOT route here merely because code is involved, a bug exists, or a plan is being made — general feature authoring, solo bug-fixing, root-cause tracing, and step-by-step planning all DEFAULT to oh-my-claudecode (its ralplan is a stronger consensus planner; its ralph/team-verify cover post-hoc verification). It governs HOW you work on code — NOT a document/slide/image domain (those are installed skills), and NOT raw parallel throughput or autonomous looping (that is oh-my-claudecode).",
   "url": "http://localhost:8973/superpowers",
   "version": "0.2.0",
   "capabilities": {},
