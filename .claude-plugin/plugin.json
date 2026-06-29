@@ -27,6 +27,27 @@
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/cross_lane_emit.py"]
           }
         ]
+      },
+      {
+        "matcher": "Bash|Agent|Task|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/route_guard.py"]
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/route_stop_guard.py"]
+          }
+        ]
       }
     ]
   }

@@ -59,6 +59,35 @@ def test_context_emits_analyze_before_route(tmp_path):
     assert "모호" in ctx
 
 
+def _six_cards(tmp_path):
+    """Write all six real-ish cards so the assembled block is full-size, letting us
+    assert WHERE the format spec lands relative to the (large) card bodies."""
+    cards = {
+        "omp": ("oh-my-project", "governance", "A" * 600),
+        "omd": ("oh-my-docs", "domain", "B" * 400),
+        "oms": ("oh-my-scholar", "domain", "C" * 400),
+        "omc": ("oh-my-claudecode", "work", "D" * 600),
+        "omx": ("oh-my-experiments", "work", "E" * 400),
+        "superpowers": ("superpowers", "work", "F" * 400),
+    }
+    for fn, (name, lane, desc) in cards.items():
+        (tmp_path / f"{fn}.json").write_text(json.dumps(
+            {"name": name, "description": desc, "lane_type": lane}))
+
+
+def test_route_format_spec_lands_in_head_before_card_bodies(tmp_path):
+    """The load-bearing format spec — the 7 verdict values + the GFM ROUTE quote
+    form + the inertia/re-route rule — must appear BEFORE the long card bodies, so
+    it survives preview truncation (the bug: spec was buried after ~7KB of cards)."""
+    _six_cards(tmp_path)
+    ctx = route_emit.build_routing_context(tmp_path)
+    # The big card bodies (600 'A'/'D' runs) mark where the bulk begins.
+    first_card_body = min(ctx.index("A" * 600), ctx.index("D" * 600))
+    # The ROUTE GFM format example and the inertia rule must precede the card bulk.
+    assert ctx.index("ROUTE →") < first_card_body, "ROUTE format buried after card bodies"
+    assert "관성" in ctx and ctx.index("관성") < first_card_body, "inertia rule buried after cards"
+
+
 def test_context_forces_analyze_above_route_explicitly(tmp_path):
     """순서 강제 문구가 명시적으로 있어야 한다. 'ROUTE 를 맨 앞에' 라는
     다른 블록 문구와 충돌해 모델이 ROUTE 를 먼저 내는 회귀가 있었다 —
