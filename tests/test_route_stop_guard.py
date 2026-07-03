@@ -65,3 +65,59 @@ def test_stop_failopen_unreadable_transcript():
     code, out = rsg.run({"transcript_path": "/no/such.jsonl", "session_id": "s1"},
                         sentinel_read=lambda s: None, sentinel_write=lambda s, t: None)
     assert code == 0 and out is None
+
+
+# ─── flush-race re-scan: the Stop hook can fire before the ROUTE is flushed ───
+
+def test_stop_reblocks_after_flush_still_no_route(tmp_path):
+    """If ALL 3 re-scans still show no ROUTE (genuine pure-chat skip), block. The
+    scan must be retried the full 3 times before concluding the ROUTE is absent."""
+    calls = []
+
+    def scan(_transcript):
+        calls.append(1)
+        return ("no route here", "u1")
+
+    code, out = rsg.run({"transcript_path": "irrelevant", "session_id": "s1"},
+                        sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                        scan=scan, sleep=lambda s: None)
+    assert code == 0
+    assert out["decision"] == "block"
+    assert "ROUTE" in out["reason"]
+    assert len(calls) == 3  # retried the full budget before blocking
+
+
+def test_stop_allows_when_route_appears_on_retry(tmp_path):
+    """Core flush-race fix: the ROUTE line the model emitted lands on the 2nd scan
+    (flush lag). The hook must allow and stop early — no 3rd scan."""
+    calls = []
+
+    def scan(_transcript):
+        calls.append(1)
+        if len(calls) == 1:
+            return ("still flushing", "u1")
+        return ("> **ROUTE →** handle-directly · x", "u1")
+
+    code, out = rsg.run({"transcript_path": "irrelevant", "session_id": "s1"},
+                        sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                        scan=scan, sleep=lambda s: None)
+    assert code == 0 and out is None  # allowed
+    assert len(calls) == 2  # stopped early once ROUTE appeared, no 3rd scan
+
+
+def test_stop_first_scan_route_no_sleep(tmp_path):
+    """When the very first scan already sees the ROUTE, allow immediately: scan once,
+    never sleep."""
+    calls = []
+    sleeps = []
+
+    def scan(_transcript):
+        calls.append(1)
+        return ("> **ROUTE →** handle-directly · x", "u1")
+
+    code, out = rsg.run({"transcript_path": "irrelevant", "session_id": "s1"},
+                        sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                        scan=scan, sleep=lambda s: sleeps.append(s))
+    assert code == 0 and out is None  # allowed
+    assert len(calls) == 1  # scanned exactly once
+    assert sleeps == []  # never slept

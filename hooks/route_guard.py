@@ -25,7 +25,8 @@ def has_route_line(text):
 def _is_real_user_turn(rec):
     """A genuine user message (the turn boundary) — NOT a tool_result line.
 
-    Real user msg : type=user, content[0].type=='text', no toolUseResult.
+    Real user msg : type=user, content[0] is a plain string OR a {"type":"text"}
+                    block, no toolUseResult.
     Tool result   : type=user, content[0].type=='tool_result', toolUseResult set.
     """
     if rec.get("type") != "user":
@@ -35,7 +36,10 @@ def _is_real_user_turn(rec):
     content = rec.get("message", {}).get("content")
     if not isinstance(content, list) or not content:
         return False
-    return content[0].get("type") == "text"
+    first = content[0]
+    if isinstance(first, str):  # some schema variants use a bare string block
+        return True
+    return first.get("type") == "text"
 
 
 def _assistant_text(rec):

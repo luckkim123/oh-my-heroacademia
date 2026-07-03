@@ -11,6 +11,7 @@ Stdlib only; fails open on every error.
 """
 import json
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -22,16 +23,32 @@ _STOP_REASON = (
 )
 
 
-def run(stdin_obj, sentinel_read=rg._sentinel_read, sentinel_write=rg._sentinel_write):
-    """Returns (exit_code, stdout_dict_or_None). Fails open on any error."""
+def run(stdin_obj, sentinel_read=rg._sentinel_read, sentinel_write=rg._sentinel_write,
+        scan=rg._scan_turn, sleep=time.sleep):
+    """Returns (exit_code, stdout_dict_or_None). Fails open on any error.
+
+    Flush-race tolerant: the Stop hook can fire before the assistant's text block is
+    flushed to the transcript JSONL, so a single scan may miss a ROUTE line the model
+    actually emitted. Re-scan up to 3 times (sleep 0.15s between attempts, ≤0.30s
+    total) before concluding the turn truly has no ROUTE line.
+    """
     try:
         transcript = stdin_obj.get("transcript_path")
         if not transcript:
             return 0, None
-        window, turn_id = rg._scan_turn(transcript)
         session_id = stdin_obj.get("session_id", "")
-        if rg.has_route_line(window):
-            return 0, None
+        turn_id = None
+        attempts = 3
+        for i in range(attempts):
+            window, scanned_turn_id = scan(transcript)
+            if i == 0:
+                # Turn boundary is fixed within a turn; pin it from the first scan.
+                turn_id = scanned_turn_id
+            if rg.has_route_line(window):
+                return 0, None  # ROUTE present (possibly after flush) — allow
+            if i < attempts - 1:
+                sleep(0.15)
+        # All attempts exhausted with no ROUTE line — existing sentinel logic.
         if sentinel_read(session_id) == turn_id:
             return 0, None  # already gated this turn — never loop the stop
         sentinel_write(session_id, turn_id)
