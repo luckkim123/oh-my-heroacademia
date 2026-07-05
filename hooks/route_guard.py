@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 
 # A fresh routing declaration: the ROUTE token followed by an arrow or colon.
 # Matches `ROUTE -> x`, `ROUTE → x`, `> **ROUTE →** x`, `ROUTE: x`.
@@ -131,8 +132,21 @@ _DENY_REASON = (
 )
 
 
-def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write):
-    """Core gate. Returns (exit_code, stdout_dict_or_None). Fails open on any error."""
+def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
+        scan=_scan_turn, sleep=time.sleep):
+    """Core gate. Returns (exit_code, stdout_dict_or_None). Fails open on any error.
+
+    Flush-race tolerant: a real-work tool can fire before the assistant's ROUTE text
+    is flushed to the transcript JSONL, so a single scan may miss a ROUTE the model
+    actually emitted -> false deny. When the first (cheap, no-sleep) scan shows no
+    ROUTE, re-scan up to 3 times (sleep 0.15s between attempts, ≤0.30s total) before
+    concluding the turn truly has no ROUTE line.
+
+    Latency guard: the fire-once sentinel short-circuit is checked BEFORE the
+    retry-sleep loop, so on a turn already gated by an earlier tool call every
+    subsequent tool call returns immediately with a single boundary scan and zero
+    sleeps — the sleep is paid at most once per turn (on its first ungated tool call).
+    """
     try:
         # Subagents run their own sub-conversations without the omha injection.
         if stdin_obj.get("agent_id") or stdin_obj.get("agent_type"):
@@ -140,12 +154,25 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write)
         transcript = stdin_obj.get("transcript_path")
         if not transcript:
             return 0, None
-        window, turn_id = _scan_turn(transcript)
+        # Cheap single boundary scan (no sleep). turn_id is fixed within a turn and
+        # keys the sentinel; re-scans only refresh the window.
+        window, turn_id = scan(transcript)
         session_id = stdin_obj.get("session_id", "")
-        verdict = decide(window, sentinel_read(session_id), turn_id)
+        # Fire-once short-circuit BEFORE the sleep loop: this turn was already gated
+        # by an earlier tool call, so never re-pay the retry-sleep here.
+        if sentinel_read(session_id) == turn_id:
+            return 0, None
+        # Retry only when the first scan missed the ROUTE (possible flush lag).
+        if not has_route_line(window):
+            attempts = 3
+            for _ in range(1, attempts):
+                sleep(0.15)
+                window, _ = scan(transcript)
+                if has_route_line(window):
+                    break
         # Mark this turn as gated so subsequent tool calls in it are not re-checked.
         sentinel_write(session_id, turn_id)
-        if verdict == "allow":
+        if has_route_line(window):
             return 0, None
         return 0, {"hookSpecificOutput": {
             "hookEventName": "PreToolUse",

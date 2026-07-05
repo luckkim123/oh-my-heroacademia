@@ -249,3 +249,91 @@ def test_failopen_malformed_jsonl_line(tmp_path):
     code, out = rg.run({"transcript_path": str(p), "tool_name": "Bash", "session_id": "s1"},
                        sentinel_read=lambda s: None, sentinel_write=lambda s, t: None)
     assert code == 0 and out is None
+
+
+# ─── group 7: run() flush-race — sentinel-gated re-scan before deny ───────────
+#
+# The Stop-hook flush-race (route_stop_guard) also affects the PreToolUse gate: a
+# real-work tool can fire before the ROUTE text is flushed to the JSONL, so a
+# single scan may miss a ROUTE the model actually emitted -> false deny. run()
+# re-scans up to 3 times (sleep 0.15s between) before concluding no ROUTE. The
+# sentinel short-circuit MUST precede the sleep loop so a fire-once (already-gated)
+# turn never re-pays the sleep on every subsequent tool call — that is the latency
+# bug a naive port of the Stop-hook loop introduces.
+#
+# run(stdin_obj, sentinel_read, sentinel_write, scan=_scan_turn, sleep=time.sleep)
+
+
+def test_run_allows_when_route_appears_on_retry(tmp_path):
+    """ROUTE lands on the 2nd scan (flush lag) -> allow, scan twice (no 3rd), sleep once."""
+    calls = []
+    sleeps = []
+
+    def scan(_transcript):
+        calls.append(1)
+        if len(calls) == 1:
+            return ("still flushing", "u1")
+        return ("> **ROUTE →** oh-my-claudecode · x", "u1")
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=scan, sleep=lambda s: sleeps.append(s))
+    assert code == 0 and out is None          # allowed
+    assert len(calls) == 2                     # stopped early once ROUTE appeared
+    assert len(sleeps) == 1                    # slept exactly once (between scan 1 and 2)
+
+
+def test_run_denies_after_full_retry_still_no_route(tmp_path):
+    """All 3 scans still show no ROUTE (genuine skip) -> deny, scan 3x, sleep 2x."""
+    calls = []
+    sleeps = []
+
+    def scan(_transcript):
+        calls.append(1)
+        return ("no route here", "u1")
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=scan, sleep=lambda s: sleeps.append(s))
+    assert code == 0
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert len(calls) == 3                     # retried the full budget before deny
+    assert len(sleeps) == 2                    # slept between each of the 3 scans
+
+
+def test_run_first_scan_route_no_sleep(tmp_path):
+    """First scan already sees ROUTE -> allow immediately: scan once, never sleep."""
+    calls = []
+    sleeps = []
+
+    def scan(_transcript):
+        calls.append(1)
+        return ("> **ROUTE →** oh-my-claudecode · x", "u1")
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=scan, sleep=lambda s: sleeps.append(s))
+    assert code == 0 and out is None          # allowed
+    assert len(calls) == 1                     # scanned exactly once
+    assert sleeps == []                        # never slept
+
+
+def test_run_sentinel_short_circuits_before_sleep(tmp_path):
+    """★ latency-bug guard: the sentinel already gated THIS turn (fire-once from an
+    earlier tool call) and the window has NO ROUTE. run() must allow immediately via
+    the sentinel short-circuit — one boundary scan, ZERO sleeps — never re-paying the
+    retry-sleep loop on every subsequent tool call of a denied turn."""
+    calls = []
+    sleeps = []
+
+    def scan(_transcript):
+        calls.append(1)
+        return ("no route in window", "u1")
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: "u1",  # already gated this turn
+                       sentinel_write=lambda s, t: None,
+                       scan=scan, sleep=lambda s: sleeps.append(s))
+    assert code == 0 and out is None          # allowed via fire-once short-circuit
+    assert len(calls) == 1                     # only the cheap boundary scan
+    assert sleeps == []                        # short-circuit BEFORE any sleep
