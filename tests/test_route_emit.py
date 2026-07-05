@@ -99,3 +99,21 @@ def test_context_forces_analyze_above_route_explicitly(tmp_path):
     assert "ANALYZE 가 ROUTE 보다 위" in ctx or "ANALYZE 를 ROUTE 보다 먼저" in ctx
     # 모호한 '맨 앞 ROUTE' 단독 지시가 없어야 (있으면 ANALYZE 와 충돌)
     assert "맨 앞에 이 한 줄로" not in ctx
+
+
+def test_no_omit_clause_in_prose(tmp_path):
+    """BUG-2 (옵션 b): '레인이 같으면 ROUTE 줄을 생략' 하는 조건부-출력 지시가 없어야 한다.
+    정책은 '매 턴 ROUTE 출력'으로 하드게이트(route_guard/route_stop_guard)와 일치한다 —
+    생략 조항이 남아 있으면 '매 턴 ROUTE'를 요구하는 게이트와 지시가 모순된다.
+    ROUTE 판정 자체는 여전히 매 턴 새로 내려야 한다(관성 복사 금지)는 취지는 보존."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane.", "lane_type": "work"}))
+    ctx = route_emit.build_routing_context(tmp_path)
+    # 생략 지시 문구가 사라져야 한다 (정확한 부분문자열)
+    assert "ROUTE 줄 자체를\n생략한다" not in ctx
+    assert "ROUTE 줄만 생략" not in ctx
+    assert "레인이 바뀌었을 때만" not in ctx
+    # 매 턴 ROUTE 출력 정책이 명시돼야 한다
+    assert "매 턴" in ctx and "ROUTE" in ctx
+    # 관성 방지(이번 요청 기준 재판정) 취지는 보존돼야 한다
+    assert "관성" in ctx
