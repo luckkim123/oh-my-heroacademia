@@ -161,3 +161,21 @@ def test_main_still_emits_when_one_card_is_malformed(tmp_path, monkeypatch, caps
     assert out.strip(), "malformed sibling card must not swallow all routing output"
     ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
     assert "oh-my-claudecode" in ctx
+def test_context_has_design_validity_gate(tmp_path):
+    """판단형 검토(설계·타당성)가 self-approval 로 handle-directly 에 새는 결함을 막는
+    재라우팅 게이트가 있어야 한다 (yaw-rate 사례: 단일 컨텍스트가 논증을 authoring 하고
+    같은 컨텍스트에서 승인). 코드-사실 게이트(d)는 '이 코드가 X한다' 단정만 커버해
+    가치·타당성 *논증*을 놓쳤다."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane.", "lane_type": "work"}))
+    ctx = route_emit.build_routing_context(tmp_path)
+    # (1) 게이트 present
+    assert "설계·타당성 판단" in ctx
+    # (2) 미검증-기본값 뒤집기 문구 present — CRITICAL 회귀 가드. 이게 없으면 미래 편집이
+    #     조용히 self-assess 방식("내 논증에 약한 고리 있나?")으로 되돌려도 테스트가 못 잡는다.
+    #     세션이 자기맹점 때문에 (ii)를 끌 수 없도록 '입증 전엔 있다고 간주' 기본값이 박혀야.
+    assert "없음을 입증하기 전엔 있다고 본다" in ctx
+    # (3) 학술 타당성 목적지가 oh-my-scholar (1순위 캐스케이드 일치 — OMC 로 보내면 모순)
+    assert "학술적으로 의미있나" in ctx and "oh-my-scholar" in ctx
+    # (4) 과흡인 밸브 — '잠정 의견' escape 가 있어야 라우팅 마비 방지
+    assert "잠정 의견" in ctx
