@@ -3,7 +3,7 @@
   "lane_type": "domain",
   "description": "Academic paper DOMAIN (not a work-style lane). Route here FIRST whenever the work product is an academic paper — LaTeX .tex / .bib, related-work survey, concept notes, outline, draft, inspect, venue mock-review, verify, revise. Because the domain is unambiguous, this takes precedence over the work-style lanes (omc/sp/omx): paper work ALWAYS enters oms, which then picks the exact scholar-* STAGE. The citation-integrity guardrails (no fabricated citations, no embedding retrieval, draft is single-careful never parallel) only exist inside oms — so paper work must not be handled directly or run as a raw OMC parallel sweep. Heavy SUB-tasks inside oms (multi-source literature search, test-first tooling code) may still re-route to omc/sp, but citation-bound source research must NOT use OMC parallel.",
   "url": "http://localhost:8973/oms",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "capabilities": {},
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
