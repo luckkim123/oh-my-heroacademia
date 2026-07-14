@@ -3,7 +3,7 @@
   "lane_type": "work-style",
   "description": "Experiment-analysis & design lane. Route here when the work is about ANALYZING experiment/training RESULTS or DESIGNING THE NEXT EXPERIMENT: compare runs, read eval/training curves, diagnose why a run regressed, propose the next config, run a semi-autonomous analyze->design->eval loop. Governs HOW you work on experiments — NOT writing the model code itself (that is superpowers), NOT generic parallel throughput (that is oh-my-claudecode). Routing here is a COMMITMENT TO ACT, not a label: once you declare this lane you MUST actually invoke an omx skill / the project's omx engine (exp-init/analyze/design/loop, the .omx/profile analyzer, `omx` CLI, `omx wiki`) — declaring 'ROUTE -> oh-my-experiments' and then hand-reading raw TensorBoard / curves yourself is the exact anti-pattern this lane exists to stop.",
   "url": "http://localhost:8973/omx",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "capabilities": {},
   "default_input_modes": ["text/plain"],
   "default_output_modes": ["text/plain"],
