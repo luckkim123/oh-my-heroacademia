@@ -131,6 +131,20 @@ def test_build_routing_context_skips_malformed_card_keeps_others(tmp_path):
     assert "oh-my-claudecode" in ctx and "Throughput lane" in ctx
 
 
+def test_build_routing_context_skips_non_dict_card_keeps_others(tmp_path):
+    """Regression: a card file that is valid JSON but not a dict (e.g. a top-level
+    list -- a plausible mid-edit state) makes `d['name']` raise TypeError, which
+    the old except tuple (JSONDecodeError, OSError, KeyError) did not catch. That
+    let TypeError propagate out of the loop, and main()'s blanket `except
+    Exception: return 0` then swallowed EVERY card's routing injection -- the
+    exact failure this per-card isolation is supposed to prevent."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane."}))
+    (tmp_path / "broken.json").write_text(json.dumps(["not", "a", "dict"]))
+    ctx = route_emit.build_routing_context(tmp_path)
+    assert "oh-my-claudecode" in ctx and "Throughput lane" in ctx
+
+
 def test_main_still_emits_when_one_card_is_malformed(tmp_path, monkeypatch, capsys):
     """e2e: main() must still print the routing envelope with the valid card's
     info even when a sibling card file is malformed, instead of the previous

@@ -55,6 +55,22 @@ def test_stop_allows_when_already_gated_this_turn(tmp_path):
     assert code == 0 and out is None
 
 
+def test_stop_allows_when_turn_id_unresolved(tmp_path):
+    """Regression: an orphan/incomplete transcript (no real user line yet, e.g. a
+    subagent's own sub-transcript) resolves turn_id=None. The old code compared
+    sentinel_read()==None via bare `==`, so a prior None-write matched and allowed.
+    The current `_sentinel_matches_turn` requires `turn_id is not None`, so a None
+    sentinel can never satisfy a None turn_id -- writing one and blocking would
+    re-block on every subsequent Stop event forever. Must allow instead."""
+    tr = _jsonl([_asst_text("no real user line, only assistant text")], tmp_path)
+    writes = []
+    code, out = rsg.run({"transcript_path": tr, "session_id": "s1"},
+                        sentinel_read=lambda s: None,
+                        sentinel_write=lambda s, t: writes.append(t))
+    assert code == 0 and out is None
+    assert writes == []  # never writes a sentinel it can't ever match later
+
+
 def test_stop_failopen_missing_transcript():
     code, out = rsg.run({"session_id": "s1"},
                         sentinel_read=lambda s: None, sentinel_write=lambda s, t: None)

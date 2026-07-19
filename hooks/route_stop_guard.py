@@ -48,7 +48,15 @@ def run(stdin_obj, sentinel_read=rg._sentinel_read, sentinel_write=rg._sentinel_
                 return 0, None  # ROUTE present (possibly after flush) — allow
             if i < attempts - 1:
                 sleep(0.15)
-        # All attempts exhausted with no ROUTE line — existing sentinel logic.
+        # All attempts exhausted with no ROUTE line.
+        if turn_id is None:
+            # No resolvable turn boundary (orphan/incomplete transcript, or a
+            # subagent's own sub-transcript with no real user line). There is no
+            # genuine turn to demand a ROUTE for, and _sentinel_matches_turn's
+            # `turn_id is not None` guard means a None turn_id can NEVER be
+            # satisfied by writing a None sentinel -- blocking here would fire
+            # every Stop event forever. Allow the stop instead.
+            return 0, None
         if rg._sentinel_matches_turn(sentinel_read(session_id), turn_id):
             return 0, None  # already gated this turn — never loop the stop
         sentinel_write(session_id, turn_id)
