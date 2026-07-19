@@ -62,3 +62,21 @@ def test_cross_lane_hook_script_exists():
     """plugin.json points at a script — that script must actually be on disk,
     otherwise the hook silently exits non-zero forever after install."""
     assert (ROOT / "hooks" / "cross_lane_emit.py").is_file()
+
+
+def test_plugin_json_registers_pretooluse_redact_guard():
+    """The privacy backstop — fires only on Bash (gh pr create/edit filtered
+    inside the hook) and the two GitHub MCP write tools."""
+    m = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    pretool = m["hooks"]["PreToolUse"]
+    entries = [e for e in pretool if any(
+        "${CLAUDE_PLUGIN_ROOT}/hooks/redact_guard.py" in h.get("args", [])
+        for h in e["hooks"])]
+    assert entries, "redact_guard PreToolUse entry missing"
+    e = entries[0]
+    for tool in ("Bash", "mcp__github__create_pull_request", "mcp__github__create_or_update_file"):
+        assert tool in e["matcher"], f"{tool} not gated"
+
+
+def test_redact_guard_script_exists():
+    assert (ROOT / "hooks" / "redact_guard.py").is_file()
