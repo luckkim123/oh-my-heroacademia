@@ -60,11 +60,40 @@ claude plugin install oh-my-claudecode@omc
 # then omha itself
 claude plugin marketplace add https://github.com/luckkim123/oh-my-heroacademia.git
 claude plugin install oh-my-heroacademia@heroacademia
+
+# optional governance / content-domain lanes (from the same heroacademia
+# marketplace added above)
+claude plugin install oh-my-project@heroacademia      # governance (omp)
+claude plugin install oh-my-scholar@heroacademia      # domain: papers (oms)
+claude plugin install oh-my-docs@heroacademia         # domain: documents (omd)
+claude plugin install oh-my-experiments@heroacademia  # work-style: experiments (omx)
 ```
 
-With neither lane installed, omha degrades to "handle-directly" for everything —
-harmless, but pointless. Installing one lane (just SP, or just OMC) is fine; omha
-will simply never route to the missing one.
+omha's hooks are pure stdlib Python — no `pip install` needed to use the
+plugin, but `python3` must be on `PATH` (all four hooks in `plugin.json` are
+invoked as `python3 ...`). Every hook fails open on exception (e.g.
+`hooks/route_guard.py`'s `except Exception: return 0, None`), so a missing
+`python3` produces no error — omha just silently does nothing.
+
+All six lanes above are independently optional. With none installed, omha
+degrades to "handle-directly" for everything — harmless, but pointless.
+Installing any subset (e.g. just SP, or just OMC + omd) is fine; omha will
+simply never route to a lane that isn't present.
+
+## Verify it's working
+
+Type any request in a new turn (e.g. "fix this bug"). Before doing any work,
+the session should quote a routing verdict line in this exact form:
+
+```
+> **ROUTE →** <lane> · <one-line reasoning>
+```
+
+`<lane>` is one of the installed cards' `name` fields (`oh-my-project`,
+`oh-my-scholar`, `oh-my-docs`, `oh-my-claudecode`, `superpowers`,
+`oh-my-experiments`) or `handle-directly`. If you never see this line, the
+`UserPromptSubmit` hook (`hooks/route_emit.py`) isn't firing — check that
+`python3` is on `PATH` and that the plugin is enabled (`claude plugin list`).
 
 ## Routing model — three-axis cascade
 
@@ -104,7 +133,10 @@ routes lanes, not skills.
 | `hooks/cross_lane_emit.py` | `PreToolUse` hook (push) — matches `Write\|Edit\|Skill` tool input against `cards/*.json` `triggers` and emits a STAGE re-route advisory on cross-lane transitions (30 s cooldown). Stdlib only |
 | `hooks/route_guard.py` | `PreToolUse` hook (hard gate) — matches `Bash\|Agent\|Task\|Edit\|Write` and **denies** the tool call if the current turn has no fresh `ROUTE →` line; fire-once per turn, flush-race tolerant. Stdlib only |
 | `hooks/route_stop_guard.py` | `Stop` hook (hard gate backstop) — blocks stopping a turn that called no tool and never declared ROUTE (pure-chat case `route_guard.py` can't see). Reuses `route_guard` internals |
-| `cards/*.json` (`omp.json`, `oms.json`, `omd.json`, `omc.json`, `superpowers.json`, `omx.json`) | Governance/domain/work-style harness cards — the routing registry (single source of truth). Each card may declare `triggers.{extensions, skills}` for push opt-in |
+| `cards/superpowers.json`, `cards/omc.json`, `cards/omx.json` | Work-style harness cards — the routing registry (single source of truth). Each card may declare `triggers.{extensions, skills}` for push opt-in |
+| `cards/omp.json` | Governance harness card — routes structure/placement/naming/dataset/`.omp` work here first (orthogonal to the content domains) |
+| `cards/oms.json` | Content-domain card — academic paper work (.tex/.bib) |
+| `cards/omd.json` | Content-domain card — deliverable documents (.pptx/.docx/.xlsx/.hwpx) |
 | `.claude-plugin/plugin.json` | Plugin manifest registering all hooks (version omitted → commit-SHA versioning) |
 | `.claude-plugin/marketplace.json` | heroacademia marketplace (own-code plugins, e.g. oh-my-docs) |
 | `src/omha/registry.py` | `load_cards()` — AgentCard validation incl. optional `triggers` block, **dev/CI-time only** (the runtime hooks do not depend on it) |
@@ -133,8 +165,9 @@ push hook stays silent for its tool calls.
 
 ## Design docs
 
-- `.../02_Decisions/2026-05-29-omha-self-rerouting-design.md` (current — push channel via PreToolUse)
-- `.../02_Decisions/2026-05-28-omha-cross-lane-routing-design.md` (cross-lane re-routing obligation — v0.4.0)
-- `.../02_Decisions/2026-05-28-omha-stage1-plugin-hook-routing.md` (stage-1)
-- `.../02_Decisions/2026-05-28-omha-redesign-cards-not-server.md` (v2 — cards-not-server)
-- `.../02_Decisions/2026-05-27-omha-design.md` (v1, server era — superseded)
+The original per-decision design docs (cards-not-server redesign, stage-1
+plugin-hook routing, cross-lane re-routing, self-rerouting) were written in
+the author's private notes and are not published in this repo. The shipped
+history and rationale for each change lives in `CHANGELOG.md`; forward-looking
+design notes that are tracked in-repo live under `docs/` (e.g.
+`docs/backlog/`).
