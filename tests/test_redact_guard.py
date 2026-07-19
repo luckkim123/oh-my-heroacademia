@@ -13,13 +13,11 @@ Test groups mirror route_guard/cross_lane_emit's convention:
   4. run() e2e — stdin dict -> warn envelope or None
   5. fail-open — missing file / malformed stdin / bad tool_input never blocks
 """
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
 import redact_guard as rdg
-
 
 # ─── group 1: load_patterns ──────────────────────────────────────────────────
 

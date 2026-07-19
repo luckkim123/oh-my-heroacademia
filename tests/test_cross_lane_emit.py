@@ -19,7 +19,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
 import cross_lane_emit as cle
 
-
 # ─── group 1: extract_signal ─────────────────────────────────────────────────
 
 def test_write_extracts_file_extension():

@@ -19,7 +19,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
 import cross_lane_emit as cle
 
-
 # ─── fixture cards ───────────────────────────────────────────────────────────
 
 def _setup_domain_cards(tmp_path, monkeypatch):
