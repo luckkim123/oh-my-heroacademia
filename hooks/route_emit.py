@@ -40,7 +40,7 @@ def build_routing_context(cards_dir: Path) -> str:
             d = json.loads(path.read_text())
             line = f"- {d['name']}: {d['description']}"
             name = d["name"]
-        except (json.JSONDecodeError, OSError, KeyError):
+        except (json.JSONDecodeError, OSError, KeyError, TypeError):
             continue
         lane_type = d.get("lane_type")
         if lane_type == "governance":
