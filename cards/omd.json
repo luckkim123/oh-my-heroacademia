@@ -24,6 +24,6 @@
   ],
   "triggers": {
     "extensions": [".pptx", ".docx", ".xlsx", ".hwpx"],
-    "skills": ["docs-intake", "docs-standardize", "docs-plan", "docs-build", "docs-inspect", "docs-verify", "docs-revise", "docs-translate", "docs-convert", "docs-learn", "docs-pilot"]
+    "skills": ["docs-intake", "docs-standardize", "docs-plan", "docs-build", "docs-inspect", "docs-verify", "docs-revise", "docs-translate", "docs-convert", "docs-learn", "docs-pilot", "docs-pdf"]
   }
 }

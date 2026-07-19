@@ -1,0 +1,6 @@
+#!/bin/sh
+# omha pre-push hook: re-run the card-sync drift gate against whichever
+# oh-my-* siblings happen to be cloned locally, so drift accumulated since
+# the last push -- in a sibling repo, or here -- is caught before it ships.
+# Opt-in, one time per clone: git config core.hooksPath scripts/git-hooks
+exec pytest -q tests/test_card_sync.py
