@@ -32,8 +32,16 @@ def build_routing_context(cards_dir: Path) -> str:
     governance_lanes, domain_lanes, work_lanes = [], [], []
     verdict_names = []
     for path in sorted(Path(cards_dir).glob("*.json")):
-        d = json.loads(path.read_text())
-        line = f"- {d['name']}: {d['description']}"
+        # Per-card isolation: one malformed/mid-edit card must not silently
+        # drop every OTHER card's routing info for the whole session (that was
+        # the bug -- main()'s blanket except swallowed a single bad card and
+        # lost all routing injection). Skip just the bad card, keep going.
+        try:
+            d = json.loads(path.read_text())
+            line = f"- {d['name']}: {d['description']}"
+            name = d["name"]
+        except (json.JSONDecodeError, OSError, KeyError):
+            continue
         lane_type = d.get("lane_type")
         if lane_type == "governance":
             governance_lanes.append(line)
@@ -41,7 +49,7 @@ def build_routing_context(cards_dir: Path) -> str:
             domain_lanes.append(line)
         else:
             work_lanes.append(line)
-        verdict_names.append(d["name"])
+        verdict_names.append(name)
     governance_body = "\n".join(governance_lanes) if governance_lanes else "  (없음)"
     domain_body = "\n".join(domain_lanes) if domain_lanes else "  (없음)"
     work_body = "\n".join(work_lanes)

@@ -318,6 +318,34 @@ def test_run_first_scan_route_no_sleep(tmp_path):
     assert sleeps == []                        # never slept
 
 
+# ─── group 8: real sentinel + unresolved turn_id — None==None bypass ─────────
+#
+# Regression for the sentinel bypass: when turn_id can't be resolved (no real
+# user line recognized in the transcript) AND no sentinel file exists yet for
+# the session (real _sentinel_read returns None on FileNotFoundError), a bare
+# `sentinel_read(session_id) == turn_id` comparison is None == None -> True,
+# short-circuiting to allow with the ROUTE check never reached.
+
+def test_e2e_unresolved_turn_id_and_no_sentinel_denies(tmp_path):
+    """Orphan transcript (assistant text only, no real user line) -> turn_id is
+    None. A fresh session has no sentinel file yet -> real _sentinel_read also
+    returns None. These two Nones must NOT be treated as a sentinel match; the
+    call must fall through to the ROUTE check and deny (zero ROUTE emitted)."""
+    tr = _jsonl([_asst_text("just chatting, no user boundary, no route")], tmp_path)
+    session_id = f"test-no-bypass-{tmp_path.name}"
+    sentinel_file = Path(rg._sentinel_path(session_id))
+    if sentinel_file.exists():
+        sentinel_file.unlink()
+    try:
+        code, out = rg.run({"transcript_path": tr, "tool_name": "Bash", "session_id": session_id})
+        assert code == 0
+        assert out is not None, "sentinel None==None bypass: tool call allowed with no ROUTE line"
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    finally:
+        if sentinel_file.exists():
+            sentinel_file.unlink()
+
+
 def test_run_sentinel_short_circuits_before_sleep(tmp_path):
     """★ latency-bug guard: the sentinel already gated THIS turn (fire-once from an
     earlier tool call) and the window has NO ROUTE. run() must allow immediately via

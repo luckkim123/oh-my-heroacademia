@@ -49,7 +49,7 @@ def run(stdin_obj, sentinel_read=rg._sentinel_read, sentinel_write=rg._sentinel_
             if i < attempts - 1:
                 sleep(0.15)
         # All attempts exhausted with no ROUTE line — existing sentinel logic.
-        if sentinel_read(session_id) == turn_id:
+        if rg._sentinel_matches_turn(sentinel_read(session_id), turn_id):
             return 0, None  # already gated this turn — never loop the stop
         sentinel_write(session_id, turn_id)
         return 0, {"decision": "block", "reason": _STOP_REASON}

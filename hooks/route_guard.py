@@ -53,6 +53,20 @@ def _assistant_text(rec):
     return "".join(b.get("text", "") for b in content if b.get("type") == "text")
 
 
+def _sentinel_matches_turn(sentinel_turn_id, turn_id):
+    """True iff the fire-once sentinel already gated THIS specific turn.
+
+    turn_id is None when the transcript has no resolvable turn boundary (e.g.
+    an orphan/incomplete transcript with no real user line yet). In that case
+    there is no genuine turn to match against, so a None sentinel must never
+    be treated as matching a None turn_id via bare ==. That coincidence used
+    to let a real-work tool call through with zero ROUTE line ever checked —
+    the sentinel bypass. Shared by route_guard.run(), route_stop_guard.run(),
+    and decide() so the guard can't drift out of sync between callers.
+    """
+    return turn_id is not None and sentinel_turn_id == turn_id
+
+
 def decide(window, sentinel_turn_id, this_turn_id):
     """Gate decision for a real-work tool call.
 
@@ -61,7 +75,7 @@ def decide(window, sentinel_turn_id, this_turn_id):
     """
     if has_route_line(window):
         return "allow"
-    if sentinel_turn_id == this_turn_id:
+    if _sentinel_matches_turn(sentinel_turn_id, this_turn_id):
         return "allow"
     return "deny"
 
@@ -160,7 +174,7 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
         session_id = stdin_obj.get("session_id", "")
         # Fire-once short-circuit BEFORE the sleep loop: this turn was already gated
         # by an earlier tool call, so never re-pay the retry-sleep here.
-        if sentinel_read(session_id) == turn_id:
+        if _sentinel_matches_turn(sentinel_read(session_id), turn_id):
             return 0, None
         # Retry only when the first scan missed the ROUTE (possible flush lag).
         if not has_route_line(window):
