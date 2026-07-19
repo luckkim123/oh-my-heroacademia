@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.1 — 2026-07-19
+### Added
+- **`tests/test_card_sync.py`** — local-developer drift gate comparing each `cards/<name>.json`
+  (`version`, `triggers.skills`) against the matching sibling `oh-my-*` repo's live
+  `.claude-plugin/plugin.json` (`version`, `skills[]`), for every card whose `name` starts with
+  `"oh-my-"` except `THIRD_PARTY_CARDS = {"oh-my-claudecode"}` (marketplace-installed, unrelated
+  versioning scheme). Skips cleanly wherever a sibling isn't cloned locally — including every CI
+  clean runner, so no `ci.yml` change is needed. Opt-out escape hatch `CURATED_SKILL_CARDS`
+  (empty today) for a card that documents its own decision to curate a skill subset instead of
+  full-mirroring.
+- **`scripts/git-hooks/pre-push`** — opt-in local hook re-running the drift gate on every omha
+  push (`git config core.hooksPath scripts/git-hooks` once to enable). Not wired into CI.
+
+### Cards
+- `omd.json` `triggers.skills` was missing `docs-pdf` (live drift against
+  `oh-my-docs` 0.5.4's `plugin.json`, caught by the new test on day one).
+
 ## 0.8.0 — 2026-07-19
 A hard-gate release: routing goes from advisory (text-channel instruction the
 model could carry forward by inertia) to enforced (hook-level block/deny at
