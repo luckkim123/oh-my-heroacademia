@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.8.0 — 2026-07-19
+A hard-gate release: routing goes from advisory (text-channel instruction the
+model could carry forward by inertia) to enforced (hook-level block/deny at
+the moment a real-work tool actually fires). Rolls up ~29 commits since 0.7.2.
+
+### Added
+- **Hard-gate enforcement via `hooks/route_guard.py` (PreToolUse) and
+  `hooks/route_stop_guard.py` (Stop).** `route_guard.py` denies
+  `Bash|Agent|Task|Edit|Write` tool calls whenever the current turn has not
+  declared a fresh `ROUTE →` line, forcing re-judgment instead of letting a
+  stale prior-turn verdict carry forward by inertia (the compliance-gap
+  failure mode a text-only instruction cannot enforce). `route_stop_guard.py`
+  is the backstop for turns that call no tool at all (pure chat), blocking
+  `Stop` until a ROUTE line is emitted. Both fire once per turn via a shared
+  session-keyed sentinel (never nag a multi-tool turn twice) and are
+  flush-race tolerant (bounded 3-attempt re-scan, ≤0.30s, for the case where a
+  tool fires before the assistant's ROUTE text is flushed to the transcript).
+
+### Changed
+- **ROUTE line now emitted only on lane switch**, not unconditionally every
+  turn — cuts output noise on same-lane continuation turns while the
+  re-judgment *obligation* (and the hard gate enforcing it) still applies
+  every turn regardless of output.
+- **Re-routing/re-judgment hardening in `route_emit.py`**: ROUTE forced every
+  turn irrespective of action count (closes a 1–2 action omission loophole);
+  a sub-task delegation moment re-triggers routing judgment; OMC set as the
+  default work-style lane with superpowers narrowed to an explicit-request
+  gate (was over-catching general coding/planning via broad phrasing);
+  external repo/plugin investigation routes to OMC regardless of action count;
+  docker/env asset work (Dockerfile/compose) routes to omp, not handle-directly.
+- **`handle-directly` code-fact assertion gate** narrowed to trigger at
+  assertion-time (the point the model can actually self-notice) rather than
+  by task category, with the verification procedure deferred to
+  `.claude/rules/03` instead of duplicated in the router.
+
+### Fixed
+- Transcript flush-race false-denies in `route_guard.py` and false-blocks in
+  `route_stop_guard.py`: a real-work tool or Stop event could fire before the
+  assistant's ROUTE text was flushed to the JSONL, causing a legitimate ROUTE
+  turn to be scanned as empty. Both hooks now bounded-retry (3 attempts,
+  0.15s apart) before concluding a turn truly has no ROUTE line.
+
+### Cards
+- `omp.json` synced through the secretary axis (0.4.0 log/brief/review,
+  0.5.0 handoff stage); `oms.json` synced through 0.8.0 (packaging),
+  0.9.0 (knowledge-lifecycle), and 0.11.0 (scholar-read/scholar-discuss).
+- Routine version-drift syncs bringing `omx`/`oms`/`omd`/`omp` cards current
+  with their sibling plugin releases (2026-07-16 patch round and after).
+
 ## 0.7.2 — 2026-06-17
 ### Changed
 - **ANALYZE/ROUTE now render as a GFM blockquote.** The injected checkpoint

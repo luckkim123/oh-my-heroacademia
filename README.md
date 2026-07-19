@@ -11,6 +11,17 @@ and distributing personal plugins (e.g. oh-my-docs).
 
 ## Status
 
+v0.8.0 — **hard-gate enforcement.** Routing moves from advisory (a text-channel
+instruction the model could carry forward by inertia) to enforced: a
+`PreToolUse` hook (`hooks/route_guard.py`) denies real-work tool calls
+(`Bash|Agent|Task|Edit|Write`) until the current turn has declared a fresh
+`ROUTE →` line, and a `Stop` hook (`hooks/route_stop_guard.py`) backstops
+pure-chat turns that call no tool at all. Both fire once per turn (shared
+sentinel) and tolerate transcript flush races. The `UserPromptSubmit` pull
+channel now emits `ROUTE →` only on a lane switch (not every turn) to cut
+noise, while the re-judgment *obligation* — and the hard gate enforcing it —
+still applies every turn. See `CHANGELOG.md` 0.8.0 for the full rollup.
+
 v0.6.0 — **three-axis cascade.** Routing grows from work-style-only into
 **governance (omp) → content domains (oms/omd) → work-style (omc/sp/omx)**.
 oh-my-project joins as a `governance` lane (judged first, so structure/placement
@@ -91,8 +102,10 @@ routes lanes, not skills.
 |------|------|
 | `hooks/route_emit.py` | `UserPromptSubmit` hook (pull) — reads `cards/*.json` and injects the `<omha-routing>` lane checkpoint every turn |
 | `hooks/cross_lane_emit.py` | `PreToolUse` hook (push) — matches `Write\|Edit\|Skill` tool input against `cards/*.json` `triggers` and emits a STAGE re-route advisory on cross-lane transitions (30 s cooldown). Stdlib only |
+| `hooks/route_guard.py` | `PreToolUse` hook (hard gate) — matches `Bash\|Agent\|Task\|Edit\|Write` and **denies** the tool call if the current turn has no fresh `ROUTE →` line; fire-once per turn, flush-race tolerant. Stdlib only |
+| `hooks/route_stop_guard.py` | `Stop` hook (hard gate backstop) — blocks stopping a turn that called no tool and never declared ROUTE (pure-chat case `route_guard.py` can't see). Reuses `route_guard` internals |
 | `cards/superpowers.json`, `cards/omc.json` | Work-style harness cards — the routing registry (single source of truth). Each card may declare `triggers.{extensions, skills}` for push opt-in |
-| `.claude-plugin/plugin.json` | Plugin manifest registering both hooks (version omitted → commit-SHA versioning) |
+| `.claude-plugin/plugin.json` | Plugin manifest registering all hooks (version omitted → commit-SHA versioning) |
 | `.claude-plugin/marketplace.json` | heroacademia marketplace (own-code plugins, e.g. oh-my-docs) |
 | `src/omha/registry.py` | `load_cards()` — AgentCard validation incl. optional `triggers` block, **dev/CI-time only** (the runtime hooks do not depend on it) |
 
