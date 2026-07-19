@@ -171,6 +171,16 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
                 if has_route_line(window):
                     break
         # Mark this turn as gated so subsequent tool calls in it are not re-checked.
+        # ponytail: this fires even when THIS call ends up denied (write happens
+        # before the has_route_line check below) — a denied first call still
+        # stamps the sentinel, so a mechanical retry of the same tool call passes
+        # with no ROUTE line ever emitted. Deliberate: fire-once is keyed per-turn,
+        # not per-attempt, to never nag a multi-tool turn twice (see decide()'s
+        # docstring). Ceiling: a denied call is indistinguishable from a granted
+        # one to later calls in the same turn. Upgrade path if this bypass is ever
+        # exploited: key the sentinel per-attempt/per-tool-call instead of per-turn
+        # (e.g. only mark gated on an actual allow), at the cost of re-scanning on
+        # every subsequent call in a multi-tool turn.
         sentinel_write(session_id, turn_id)
         if has_route_line(window):
             return 0, None
