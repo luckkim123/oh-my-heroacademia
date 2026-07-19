@@ -1,0 +1,13 @@
+# redact-guard denylist — example template.
+#
+# Copy this file to `.omha/redact-patterns.txt` (same directory) and fill in
+# your own private strings. That real file is gitignored — never commit it.
+#
+# Format: one literal substring per line. Matching is case-insensitive.
+# '#' comments and blank lines are ignored. No regex, no wildcards.
+#
+# Only generic placeholders below — replace with your own real values.
+
+example-ssh-alias
+my-private-codename
+/Users/yourusername/
