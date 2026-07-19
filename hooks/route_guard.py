@@ -105,7 +105,10 @@ def current_turn_id(transcript_path):
 # ─── sentinel I/O (fire-once per turn, keyed by session) ─────────────────────
 
 def _sentinel_path(session_id):
-    return os.path.join(tempfile.gettempdir(), f"omha_route_gate_{session_id}.json")
+    # Sanitize: session_id lands in a filename, so strip anything that could
+    # traverse out of the temp dir (path separators, "..", etc.) before use.
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", session_id)
+    return os.path.join(tempfile.gettempdir(), f"omha_route_gate_{safe_id}.json")
 
 
 def _sentinel_read(session_id):
