@@ -117,3 +117,31 @@ def test_no_omit_clause_in_prose(tmp_path):
     assert "매 턴" in ctx and "ROUTE" in ctx
     # 관성 방지(이번 요청 기준 재판정) 취지는 보존돼야 한다
     assert "관성" in ctx
+
+
+# ─── group: per-card isolation — one malformed card must not sink all of them ─
+
+def test_build_routing_context_skips_malformed_card_keeps_others(tmp_path):
+    """One card missing a required field must not raise out of the loop and lose
+    every OTHER valid card's routing info -- only that card is skipped."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane."}))
+    (tmp_path / "broken.json").write_text(json.dumps({"description": "no name field"}))
+    ctx = route_emit.build_routing_context(tmp_path)
+    assert "oh-my-claudecode" in ctx and "Throughput lane" in ctx
+
+
+def test_main_still_emits_when_one_card_is_malformed(tmp_path, monkeypatch, capsys):
+    """e2e: main() must still print the routing envelope with the valid card's
+    info even when a sibling card file is malformed, instead of the previous
+    blanket `except Exception: return 0` silently swallowing everything."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane."}))
+    (tmp_path / "broken.json").write_text(json.dumps({"description": "no name field"}))
+    monkeypatch.setattr(route_emit, "CARDS_DIR", tmp_path)
+    rc = route_emit.main()
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert out.strip(), "malformed sibling card must not swallow all routing output"
+    ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert "oh-my-claudecode" in ctx
