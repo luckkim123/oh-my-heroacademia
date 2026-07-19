@@ -20,7 +20,9 @@ Transcript schema (verified empirically against a real session transcript):
   meta lines      : type in {attachment,last-prompt,ai-title,mode,queue-operation} -> ignored
 """
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
@@ -337,3 +339,25 @@ def test_run_sentinel_short_circuits_before_sleep(tmp_path):
     assert code == 0 and out is None          # allowed via fire-once short-circuit
     assert len(calls) == 1                     # only the cheap boundary scan
     assert sleeps == []                        # short-circuit BEFORE any sleep
+
+
+# ─── group 8: _sentinel_path — session_id sanitized before filename build ─────
+
+def test_sentinel_path_strips_path_traversal():
+    """session_id containing '../' must not escape the temp dir."""
+    path = rg._sentinel_path("../../etc/passwd")
+    assert os.path.dirname(path) == tempfile.gettempdir()
+    assert ".." not in os.path.basename(path)
+    assert "/" not in os.path.basename(path)
+
+
+def test_sentinel_path_strips_absolute_path_injection():
+    """A session_id that looks like an absolute path is neutralized too."""
+    path = rg._sentinel_path("/etc/passwd")
+    assert os.path.dirname(path) == tempfile.gettempdir()
+
+
+def test_sentinel_path_normal_id_unchanged():
+    """Ordinary alphanumeric/uuid-style session_id passes through untouched."""
+    path = rg._sentinel_path("abc123-DEF_456")
+    assert os.path.basename(path) == "omha_route_gate_abc123-DEF_456.json"
