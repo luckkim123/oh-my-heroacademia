@@ -1,0 +1,28 @@
+name: Tag Guard
+
+# Runs the pyproject.toml/CHANGELOG.md/git-tag drift check in isolation.
+# Separate from ci.yml on purpose (another pending branch touches that file).
+#
+# actions/checkout@v4 does a shallow, tags-less checkout by default — the
+# reason the analogous test in oh-my-scholar silently no-ops on CI (no tags
+# fetched -> gather() always sees latest_tag=None -> the tag surface always
+# SKIPs, so a real drift never fails the build). fetch-tags + fetch-depth: 0
+# below fix that for this repo.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tag-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest
+      - run: python -m pytest tests/test_tag_drift.py -v
