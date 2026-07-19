@@ -28,7 +28,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
 import route_guard as rg
 
-
 # ─── group 1: has_route_line — fresh ROUTE marker detection ──────────────────
 
 def test_plain_arrow_route_detected():

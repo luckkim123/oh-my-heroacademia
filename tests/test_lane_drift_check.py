@@ -85,7 +85,7 @@ def test_missing_plugin_json_reports_error_without_crashing(tmp_path):
 
 def test_semver_sort_is_numeric_not_lexicographic(tmp_path):
     # Lexicographic string sort would rank "0.9.0" above "0.12.2" ('9' > '1').
-    dev = make_dev_root(tmp_path, "dev", "oh-my-heroacademia", version="0.12.2")
+    make_dev_root(tmp_path, "dev", "oh-my-heroacademia", version="0.12.2")
     cache = make_cache(tmp_path, "oh-my-heroacademia", versions=["0.9.0", "0.12.2"])
     installed, _ = ldc.find_installed(cache, "oh-my-heroacademia")
     assert installed == "0.12.2"

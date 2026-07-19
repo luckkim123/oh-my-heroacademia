@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from omha.registry import load_cards
 
 CARDS_DIR = Path(__file__).parent.parent / "cards"

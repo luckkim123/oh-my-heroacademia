@@ -5,6 +5,7 @@ and skill names (e.g. "scholar-draft" → OMS). The cross_lane_emit hook reads
 these to flip lanes mid-task. Backwards-compatible: missing `triggers` → empty.
 """
 from pathlib import Path
+
 from omha.registry import AgentTriggers, load_cards
 
 CARDS_DIR = Path(__file__).parent.parent / "cards"
