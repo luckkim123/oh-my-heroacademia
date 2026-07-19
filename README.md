@@ -104,7 +104,7 @@ routes lanes, not skills.
 | `hooks/cross_lane_emit.py` | `PreToolUse` hook (push) — matches `Write\|Edit\|Skill` tool input against `cards/*.json` `triggers` and emits a STAGE re-route advisory on cross-lane transitions (30 s cooldown). Stdlib only |
 | `hooks/route_guard.py` | `PreToolUse` hook (hard gate) — matches `Bash\|Agent\|Task\|Edit\|Write` and **denies** the tool call if the current turn has no fresh `ROUTE →` line; fire-once per turn, flush-race tolerant. Stdlib only |
 | `hooks/route_stop_guard.py` | `Stop` hook (hard gate backstop) — blocks stopping a turn that called no tool and never declared ROUTE (pure-chat case `route_guard.py` can't see). Reuses `route_guard` internals |
-| `cards/superpowers.json`, `cards/omc.json` | Work-style harness cards — the routing registry (single source of truth). Each card may declare `triggers.{extensions, skills}` for push opt-in |
+| `cards/*.json` (`omp.json`, `oms.json`, `omd.json`, `omc.json`, `superpowers.json`, `omx.json`) | Governance/domain/work-style harness cards — the routing registry (single source of truth). Each card may declare `triggers.{extensions, skills}` for push opt-in |
 | `.claude-plugin/plugin.json` | Plugin manifest registering all hooks (version omitted → commit-SHA versioning) |
 | `.claude-plugin/marketplace.json` | heroacademia marketplace (own-code plugins, e.g. oh-my-docs) |
 | `src/omha/registry.py` | `load_cards()` — AgentCard validation incl. optional `triggers` block, **dev/CI-time only** (the runtime hooks do not depend on it) |
