@@ -1,7 +1,7 @@
 {
   "name": "oh-my-experiments",
   "lane_type": "work-style",
-  "description": "Experiment-analysis & design lane. Route here when the work is about ANALYZING experiment/training RESULTS or DESIGNING THE NEXT EXPERIMENT: compare runs, read eval/training curves, diagnose why a run regressed, propose the next config, run a semi-autonomous analyze->design->eval loop. Governs HOW you work on experiments — NOT writing the model code itself (that is superpowers), NOT generic parallel throughput (that is oh-my-claudecode). Routing here is a COMMITMENT TO ACT, not a label: once you declare this lane you MUST actually invoke an omx skill / the project's omx engine (exp-init/analyze/design/loop, the .omx/profile analyzer, `omx` CLI, `omx wiki`) — declaring 'ROUTE -> oh-my-experiments' and then hand-reading raw TensorBoard / curves yourself is the exact anti-pattern this lane exists to stop.",
+  "description": "Experiment-analysis, design & program-planning lane. Route here when the work is about ANALYZING experiment/training RESULTS, DESIGNING THE NEXT EXPERIMENT, or PLANNING A MULTI-STAGE EXPERIMENT LINE: compare runs, read eval/training curves, diagnose why a run regressed, propose the next config, run a semi-autonomous analyze->design->eval loop, or lay out the phased plan for a research line that has no runs yet. Governs HOW you work on experiments — NOT writing the model code itself (that is superpowers), NOT generic parallel throughput (that is oh-my-claudecode). A plan is still THIS lane even when it derives from a research/reading document instead of a report.md: the absence of a report is not a reason to fall through to superpowers and write into `.sp/plans/` — a multi-stage experiment line belongs in `.omx/programs/<id>/PLAN.md` (`omx program-init --id <id>`, openable before its first campaign exists). Routing here is a COMMITMENT TO ACT, not a label: once you declare this lane you MUST actually invoke an omx skill / the project's omx engine (exp-init/analyze/design/loop, `omx program-init`, the .omx/profile analyzer, `omx` CLI, `omx wiki`) — declaring 'ROUTE -> oh-my-experiments' and then hand-reading raw TensorBoard / curves yourself is the exact anti-pattern this lane exists to stop.",
   "url": "http://localhost:8973/omx",
   "version": "0.9.0",
   "capabilities": {},
@@ -12,9 +12,13 @@
      "description": "Signals that route to oh-my-experiments (session then picks exp-init/analyze/design/loop).",
      "tags": ["experiment", "analysis", "eval", "run-comparison", "next-experiment",
               "training-curve", "regression", "report", "write-up", "experiment-report",
-              "실험", "분석", "평가", "런비교", "다음실험", "리포트", "결과정리"],
+              "experiment-plan", "program-plan", "research-line", "phased-plan",
+              "실험", "분석", "평가", "런비교", "다음실험", "리포트", "결과정리",
+              "실험계획", "실험프로그램", "연구라인"],
      "examples": [
        "analyze these N training runs and tell me what changed",
+       "이 리서치 문서 읽고 실험 계획 세워줘 (= .omx/programs/<id>/PLAN.md, NOT .sp/plans/)",
+       "plan the phased experiment line for this idea — no runs exist yet",
        "make a report on these runs / 이 런들 report 만들어줘",
        "이 run들 분석하고 다음 실험 설계해줘",
        "why did this run regress vs baseline — diagnose from the curves",

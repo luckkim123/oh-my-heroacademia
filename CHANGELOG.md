@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+### Changed
+- **`cards/omx.json` claims experiment PLANNING, not just analysis/design.** The lane
+  description and tags now cover a multi-stage experiment-line plan, and state explicitly
+  that a plan grown from a research document rather than a `report.md` still routes here —
+  the missing report is not a reason to fall through to superpowers and write into
+  `.sp/plans/`. Observed 2026-08-04: a Koopman experiment plan landed in the superpowers
+  scratch tree because the card described only "analyze results / design the next
+  experiment", leaving research-driven planning unclaimed by any lane.
+
 ## 0.8.1 — 2026-07-19
 ### Added
 - **`tests/test_card_sync.py`** — local-developer drift gate comparing each `cards/<name>.json`
