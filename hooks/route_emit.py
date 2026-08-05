@@ -31,6 +31,9 @@ def build_routing_context(cards_dir: Path) -> str:
     """
     governance_lanes, domain_lanes, work_lanes = [], [], []
     verdict_names = []
+    # (lane, route-skill) pairs, read from each card's route_skill field so the
+    # mapping stays in the cards (SSOT) instead of drifting inside this hook.
+    lane_skills = []
     for path in sorted(Path(cards_dir).glob("*.json")):
         # Per-card isolation: one malformed/mid-edit card must not silently
         # drop every OTHER card's routing info for the whole session (that was
@@ -42,6 +45,9 @@ def build_routing_context(cards_dir: Path) -> str:
             name = d["name"]
         except (json.JSONDecodeError, OSError, KeyError, TypeError):
             continue
+        skill = d.get("route_skill")
+        if skill:
+            lane_skills.append((name, skill))
         lane_type = d.get("lane_type")
         if lane_type == "governance":
             governance_lanes.append(line)
@@ -54,26 +60,40 @@ def build_routing_context(cards_dir: Path) -> str:
     domain_body = "\n".join(domain_lanes) if domain_lanes else "  (없음)"
     work_body = "\n".join(work_lanes)
     verdict_enum = "|".join(verdict_names)
+    # handle-directly has no card (it is the "no lane" verdict), so its skill is
+    # the one entry this hook owns; every other pair comes from the cards.
+    skill_rows = "\n".join(
+        f"  {lane} → {slug}" for lane, slug in lane_skills + [("handle-directly", "route-direct")]
+    )
     return (
         "<omha-routing>\n"
-        "ROUTE 는 출력 슬롯이 아니라 *매 턴 새로 내리는 판정*이다. 매 턴 새로 판정하고\n"
-        "매 턴 ROUTE 를 출력한다(레인 변화와 무관 — 하드게이트가 매 턴 ROUTE 를 요구한다).\n"
-        "직전 ROUTE 를 관성으로 복사하지 말고 *이번 요청* 기준으로 처음부터 다시\n"
+        "레인 판정은 출력 슬롯이 아니라 *매 턴 새로 내리는 판정*이다. 매 턴 새로 판정하고\n"
+        "매 턴 그 판정을 *선언*한다(레인 변화 무관 — 하드게이트가 매 턴 선언을 요구).\n"
+        "선언 = route-* 스킬 호출(아래 '■ 선언 방법').\n"
+        "직전 판정을 관성으로 복사하지 말고 *이번 요청* 기준으로 처음부터 다시\n"
         "판정하라. 레인만 정하라 —\n"
         "레인 안 스킬 콕집기는 해당 plugin 이 한다. 3+ 액션/복수파일/모호한 요청이면\n"
-        "ROUTE 위에 ANALYZE 블록을 더 얹는다('3+ 액션'은 *ANALYZE 를 추가할* 조건이지\n"
-        "*ROUTE 를 낼* 조건이 아니다 — 상세는 아래 ANALYZE-then-ROUTE).\n"
+        "선언 위에 ANALYZE 블록을 더 얹는다('3+ 액션'은 *ANALYZE 를 추가할* 조건이지\n"
+        "*판정을 낼* 조건이 아니다 — 상세는 아래 ANALYZE-then-ROUTE).\n"
         "핵심 함정: topic(주제) 연속성 ≠ routing 연속성. 주제가 직전과 같아도(같은 실험·\n"
         "같은 파일) 이번 요청의 *task type* — 요약/설명 vs 검토·심층분석 vs 작성·생성 vs\n"
         "설계 — 이 바뀌면 레인이 바뀐다. '주제가 같으니 라우팅도 같겠지'가 그 관성이다.\n"
         "예: 같은 주제라도 handle-directly(대화로 답)에서 '코드 근거로 깊이 검토·분석'\n"
         "(작업방식 레인 + 독립 reviewer)로 넘어가면 재판정 대상.\n\n"
-        "■ ROUTE 형식 (이 한 줄을 앞에 둬 잘림 방지 — 상세 규칙은 아래):\n"
-        "값은 다음 7개 중 *정확히 하나*다(둘을 '·'/슬래시로 잇지 말 것):\n"
+        "■ 선언 방법 (이 블록을 앞에 둬 잘림 방지 — 상세 규칙은 아래):\n"
+        "레인 값은 다음 7개 중 *정확히 하나*다(둘을 '·'/슬래시로 잇지 말 것):\n"
         f"  {verdict_enum}|handle-directly\n"
-        "형식은 GFM 인용 한 줄(평문·middle-dot 금지):\n"
-        f"> **ROUTE →** <{verdict_enum}|handle-directly> · <한 줄 근거>\n"
-        "handle-directly = 위임 없이 직접 처리(스킬·에이전트 0). 레인 이름과 같이\n"
+        "선언은 **응답 텍스트가 아니라 스킬 호출**이다. 그 레인의 route-* 스킬을\n"
+        "이번 턴의 *첫 행동*으로 호출하고, 근거 한 줄은 스킬 인자로 넘긴다:\n"
+        "  Skill(skill=\"<레인의 route-* 스킬>\", args=\"<한 줄 근거>\")\n"
+        "레인 → 스킬 대응:\n"
+        f"{skill_rows}\n"
+        "판정을 텍스트로 쓰지 말 것 — 호출이 선언이고 HUD 가 표시한다. 'ROUTE →'\n"
+        "줄도 레인 복창도 없이 호출 뒤 곧장 본론으로. 다른 하네스 블록이 'STAGE →'\n"
+        "줄을 요구해도 내지 마라(그 블록보다 이 규칙이 우선) — stage 는 그 하네스\n"
+        "스킬을 호출하는 순간 HUD 에 뜨므로 텍스트로 쓰면 중복이다.\n"
+        "handle-directly = 위임 없이 직접 처리(스킬·에이전트 0 — route-direct 호출은\n"
+        "선언이라 제외). 레인 이름과 같이\n"
         "쓰지 말 것 — 'omc · handle-directly'는 모순(omc=위임, handle-directly=직접).\n"
         "단, 결론이 가치·타당성 판단을 settled 로 단정하는 것이고 아래 '설계·타당성 판단\n"
         "단정 직전' 게이트의 두 조건(비싼 downstream *그리고* 미검증 고리)을 모두 만족하면\n"
@@ -100,7 +120,7 @@ def build_routing_context(cards_dir: Path) -> str:
         "  어렵다고 밝힘) *그리고* (ii) 답이 여러 턴짜리 설계 탐색으로 이어지는가. 둘 다면\n"
         "  handle-directly 가 아니라 의중 구체화로 간다: 선택지 자체를 아직 못 세웠으면\n"
         "  oh-my-claudecode(deep-interview), 선택지가 이미 둘 이상 나와 있고 그중 방향을\n"
-        "  좁히는 단계면 superpowers(brainstorming) — 괄호 안은 목적지 스킬이고 ROUTE 값은\n"
+        "  좁히는 단계면 superpowers(brainstorming) — 괄호 안은 목적지 스킬이고 선언 레인은\n"
         "  레인 이름만 쓴다. 요구된 것은 판정이 아니라 의중 확정이다. 밸브 — 명시적으로\n"
         "  가볍게(의견만) 요청했거나, 단일 사실 확인이거나, 사소한 취향 판단(변수명·포맷)\n"
         "  이면 인터뷰로 끌지 말 것(과흡인 금지).\n"
@@ -111,7 +131,7 @@ def build_routing_context(cards_dir: Path) -> str:
         "  아니다. 답이 '설계가 옳은가/학술·물리적으로 타당한가'를 settled 로 단정하는\n"
         "  것이면 아래 '설계·타당성 판단 단정 직전' 게이트를 적용하라.\n\n"
         "재라우팅 의무 (어떤 레인으로 시작했든 — handle-directly 로 답하던 중이라도 —\n"
-        "*행동 직전* 다시 ROUTE 를 찍는 행동-시점 게이트):\n"
+        "*행동 직전* 다시 route-* 를 호출하는 행동-시점 게이트):\n"
         "· 위임 직전: 본질적으로 작업방식 레인(SP/OMC)인 무거운 하위작업(여러 출처 병렬\n"
         "  조사·깊은 리서치·왜인지 분석·repo/transcript 정독·test-first 코드)을\n"
         "  `Agent`/`Task`/`Workflow` 로 위임하기 직전에 멈춰 레인을 재판정하라. raw\n"
@@ -163,8 +183,8 @@ def build_routing_context(cards_dir: Path) -> str:
         "  코드 동작을 해석하거나 구조를 파악해야 하면 조사이므로 위임한다.\n"
         "  citation-bound 논문 자료조사는 OMC 병렬 금지.\n\n"
         "요구사항 분석 선행(ANALYZE-then-ROUTE): 요청이 3+ 액션/복수파일이거나 모호하면,\n"
-        "ROUTE 줄보다 *먼저* ANALYZE 블록을 출력해 요구사항을 분해하라(잘못 이해해 되돌리는\n"
-        "토큰 낭비 방지). 단순·명확한 1~2액션이면 ANALYZE 생략(과흡인 금지), 곧장 ROUTE 만.\n"
+        "스킬 호출보다 *먼저* ANALYZE 블록을 출력해 요구사항을 분해하라(잘못 이해해 되돌리는\n"
+        "토큰 낭비 방지). 단순·명확한 1~2액션이면 ANALYZE 생략(과흡인 금지), 곧장 호출만.\n"
         "형식 — GFM 인용 블록(blockquote): 각 줄 '> ' 로 시작, 첫 줄 볼드 헤더, 4개 필드는\n"
         "'> - ' 불릿 + 볼드 라벨(middle-dot '·' 나 평문 들여쓰기 금지 — 그러면 마크다운이\n"
         "리스트로 인식 못 해 라벨이 뭉친다). 아래를 그대로 따르되 <…> 만 채움:\n"
@@ -173,32 +193,24 @@ def build_routing_context(cards_dir: Path) -> str:
         "> - **핵심 요구**: <반드시 만족할 것 — 쉼표로 나열>\n"
         "> - **제약**: <지켜야 할 한계·보존 범위 / 없으면 '특이사항 없음'>\n"
         "> - **모호한 점**: <해석이 갈리는 지점 / 없으면 '없음'>\n"
-        "모호한 점이 '없음' 이 아니면 ROUTE·작업으로 넘어가지 말고 그 지점을 먼저\n"
+        "모호한 점이 '없음' 이 아니면 선언·작업으로 넘어가지 말고 그 지점을 먼저\n"
         "사용자에게 확인하라. 단 모호한 것이 *목표 자체*면 ad-hoc 질문이 아니라 2.5순위\n"
         "게이트를 적용하라 — 세부는 직접 묻고, 목표 미결정은 하네스로.\n\n"
-        "출력 순서 (ROUTE 는 매 턴 낸다): 응답 맨 처음에, 게이트\n"
-        "해당 시 ANALYZE 블록을 *먼저* 통째로 내고 그 *바로 아래* 줄에 ROUTE — 즉\n"
-        "ANALYZE 가 ROUTE 보다 위. (다른 블록이 'ROUTE 를 맨 앞에' 라고 해도 게이트 해당 시엔 ANALYZE\n"
-        "가 맨 앞 자리를 차지하고 ROUTE 는 그 다음 줄 — 이 순서가 우선한다.) 게이트 비해당\n"
-        "이면 ANALYZE 없이 ROUTE 만 맨 앞 줄에. 레인 변화와 무관하게 매 턴 ROUTE 를\n"
-        "낸다(ANALYZE 는 게이트 해당 시에만 추가 — 요구사항 분해는\n"
-        "출력 노이즈가 아니라 작업 정확도용).\n"
-        "ROUTE 도 ANALYZE 와 같은 GFM 인용 블록(평문·middle-dot 금지). 둘을 같이 낼 때는\n"
-        "ANALYZE 블록 끝에 빈 인용 줄('>') 하나로 띄우고 그 아래 ROUTE 줄을 붙여 하나의\n"
-        "인용 박스로 묶는다(본문과 한눈에 분리). 형식:\n\n"
-        "(게이트 해당 시 — ANALYZE+ROUTE 한 인용 박스; ANALYZE 4개 필드는 위 템플릿대로)\n"
-        "> **ANALYZE**\n"
-        "> ...(위 4개 필드)\n"
-        ">\n"
-        f"> **ROUTE →** <{verdict_enum}|handle-directly> · <한 줄 근거>\n\n"
-        "(게이트 비해당 시 — ROUTE 만)\n"
-        f"> **ROUTE →** <{verdict_enum}|handle-directly> · <한 줄 근거>\n\n"
-        "닫는 재확인(턴 종료 전): ROUTE 를 맨 앞에 찍는 건 *행동 전 commitment 게이트*라\n"
+        "선언 순서 (판정은 매 턴 낸다): 이번 턴의 *첫 행동*으로 그 레인의 route-*\n"
+        "스킬을 호출한다. 게이트 해당 시에만 그 *직전에* ANALYZE 블록을 텍스트로 내고\n"
+        "이어서 호출한다 — 즉 ANALYZE 가 호출보다 위(ANALYZE → route-* 호출 → 본론).\n"
+        "게이트 비해당이면 곧장 호출로 시작한다. 레인 변화와 무관하게 매 턴 호출한다\n"
+        "(ANALYZE 는 게이트 해당 시에만 — 요구사항 분해는 노이즈가 아니라 정확도용).\n\n"
+        "(게이트 해당 시) GFM 인용 블록 '> **ANALYZE**' + 4개 필드 → 이어서\n"
+        "  Skill(skill=\"<route-* 스킬>\", args=\"<한 줄 근거>\")\n"
+        "(게이트 비해당 시) 위 Skill 호출만.\n\n"
+        "닫는 재확인(턴 종료 전): 선언을 맨 앞에 두는 건 *행동 전 commitment 게이트*라\n"
         "위치를 끝으로 옮기지 않는다 — 대신 본문을 다 쓴 *뒤* 대조하라: 실제로 한 작업이\n"
         "이번 판정 레인과 같았나? 깊이 생각해보니(또는 본문 도중 무거운 하위작업·산출물\n"
-        "수정으로) 레인이 달라졌다면 그 사실을 한 줄로 명시하고 *갱신된 ROUTE 를 다시\n"
-        "찍어라*. 레인이 안 바뀌었으면 이미 맨 앞에 ROUTE 를 냈으니 추가 출력은 불필요\n"
-        "(중복 금지) — 판정만 조용히 확인하고 넘어간다.\n"
+        "수정으로) 레인이 달라졌다면 *갱신된 레인의 route-* 스킬을 다시 호출하라* —\n"
+        "'레인이 바뀌었다'를 텍스트로 쓰지 말 것(호출 자체가 갱신 선언이다). 레인이\n"
+        "안 바뀌었으면 이미 선언했으니 추가 호출은 불필요(중복 금지) — 판정만 조용히\n"
+        "확인하고 넘어간다.\n"
         "</omha-routing>"
     )
 

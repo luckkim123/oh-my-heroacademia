@@ -98,7 +98,11 @@ def test_context_forces_analyze_above_route_explicitly(tmp_path):
         {"name": "oh-my-claudecode", "description": "Throughput lane."}))
     ctx = route_emit.build_routing_context(tmp_path)
     # 순서를 명시적으로 못박는 강제 문구
-    assert "ANALYZE 가 ROUTE 보다 위" in ctx or "ANALYZE 를 ROUTE 보다 먼저" in ctx
+    # 0.8.4: 선언 채널이 텍스트 -> route-* 스킬 호출로 바뀌면서 "ROUTE 보다 위"가
+    # "호출보다 위"가 됐다. 검사하는 의도(순서 강제 문구의 존재)는 그대로다.
+    assert ("ANALYZE 가 호출보다 위" in ctx
+            or "ANALYZE 가 ROUTE 보다 위" in ctx
+            or "ANALYZE 를 ROUTE 보다 먼저" in ctx)
     # 모호한 '맨 앞 ROUTE' 단독 지시가 없어야 (있으면 ANALYZE 와 충돌)
     assert "맨 앞에 이 한 줄로" not in ctx
 

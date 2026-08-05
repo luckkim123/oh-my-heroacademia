@@ -388,3 +388,76 @@ def test_sentinel_path_normal_id_unchanged():
     """Ordinary alphanumeric/uuid-style session_id passes through untouched."""
     path = rg._sentinel_path("abc123-DEF_456")
     assert os.path.basename(path) == "omha_route_gate_abc123-DEF_456.json"
+
+
+# ─── group 7: route-<lane> Skill call as a declaration channel ───────────────
+#
+# The lane may be declared by CALLING a `route-<lane>` skill instead of writing a
+# ROUTE line in the visible reply. The HUD already renders Skill tool_use blocks,
+# so this channel puts the lane on the statusline for free. Both channels stay
+# valid — prose is the fallback when no route skill is invoked.
+
+def _asst_skill(skill):
+    return {"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "name": "Skill", "input": {"skill": skill}}]}}
+
+
+def test_namespaced_route_skill_counts_as_declaration(tmp_path):
+    tr = _jsonl([_user("go"), _asst_skill("oh-my-heroacademia:route-omc")], tmp_path)
+    assert rg.has_route_line(rg.current_turn_window(tr)) is True
+
+
+def test_bare_route_skill_counts_as_declaration(tmp_path):
+    tr = _jsonl([_user("go"), _asst_skill("route-direct")], tmp_path)
+    assert rg.has_route_line(rg.current_turn_window(tr)) is True
+
+
+def test_unrelated_skill_is_not_a_declaration(tmp_path):
+    tr = _jsonl([_user("go"), _asst_skill("superpowers:brainstorming")], tmp_path)
+    assert rg.has_route_line(rg.current_turn_window(tr)) is False
+
+
+def test_skill_merely_containing_route_does_not_false_pass(tmp_path):
+    """`route-` must start the (namespace-stripped) name, not appear mid-word."""
+    tr = _jsonl([_user("go"), _asst_skill("omc:my-route-helper")], tmp_path)
+    assert rg.has_route_line(rg.current_turn_window(tr)) is False
+
+
+def test_non_skill_tool_use_is_not_a_declaration(tmp_path):
+    """A Bash/Edit call never declares a lane, whatever its input looks like."""
+    tr = _jsonl([_user("go"), _asst_tool("Bash")], tmp_path)
+    assert rg.has_route_line(rg.current_turn_window(tr)) is False
+
+
+def test_prose_route_still_works_alongside_skill_channel(tmp_path):
+    """Back-compat: the written ROUTE line remains a valid declaration."""
+    tr = _jsonl([_user("go"), _asst_text("> **ROUTE →** handle-directly · x")], tmp_path)
+    assert rg.has_route_line(rg.current_turn_window(tr)) is True
+
+
+def test_e2e_allow_when_route_declared_by_skill_call_only(tmp_path):
+    """The whole point: no ROUTE text anywhere, yet real work is allowed."""
+    tr = _jsonl([_user_uuid("go", "u1"), _asst_skill("oh-my-heroacademia:route-omc"),
+                 _asst_tool("Edit")], tmp_path)
+    code, out = rg.run({"transcript_path": tr, "tool_name": "Edit", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       sleep=lambda _: None)
+    assert code == 0 and out is None
+
+
+def test_e2e_still_denies_when_neither_channel_used(tmp_path):
+    tr = _jsonl([_user_uuid("go", "u1"), _asst_skill("superpowers:brainstorming"),
+                 _asst_tool("Edit")], tmp_path)
+    code, out = rg.run({"transcript_path": tr, "tool_name": "Edit", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       sleep=lambda _: None)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_malformed_skill_input_fails_open_to_no_declaration(tmp_path):
+    """A tool_use whose input is missing/not-a-dict must not crash the scan."""
+    rec = {"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "name": "Skill"},
+        {"type": "tool_use", "name": "Skill", "input": {"skill": None}}]}}
+    tr = _jsonl([_user("go"), rec], tmp_path)
+    assert rg.has_route_line(rg.current_turn_window(tr)) is False

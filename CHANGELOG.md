@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.8.4 — 2026-08-05
+The lane verdict moved out of the reply and into a tool call. It was never a display slot — it is
+the gate's input — but it was *rendered* as one: a blockquote heading every turn, joined by up to
+three `STAGE →` lines from the sibling harnesses. This release keeps the enforcement and drops the
+prose. The HUD gains the lane for free: Claude Code already records every `Skill` invocation in the
+transcript, and the statusline already parses those blocks.
+
+### Added
+- **`route-<lane>` declaration skills (7).** `route-omc`, `route-docs`, `route-project`,
+  `route-scholar`, `route-exp`, `route-sp`, `route-direct`. Each is a pure declaration — it carries
+  no instructions, so the call costs one round-trip and nothing else. `route-direct` is the one
+  entry with no card, because "no lane at all" is a verdict, not a harness. Invoking the skill IS
+  the verdict; the one-line reason rides along as the skill argument, so it stays auditable in the
+  transcript without spending a line of the reply.
+- **Card field `route_skill` (`cards/*.json`).** The lane→skill mapping lives in the cards, not in
+  the hook — same reason the lane descriptions do. `route_emit.py` reads it; nothing is embedded.
+- **`tests/test_route_skills.py` (8 cases).** The drift alarm for a three-way dependency that can
+  now break silently: a card's `route_skill`, the skill on disk, and the `plugin.json` skills list.
+  Add a card and these fail until its skill exists and is registered. One case ties the slugs back
+  to `route_guard`'s detection regex, so a naming convention change cannot pass unnoticed.
+
+### Changed
+- **`hooks/route_guard.py` — the declaration window now spans two channels.** `_assistant_text()`
+  folds a `route-*` Skill call into the same string it already built from text blocks, rendering it
+  as a synthetic `ROUTE → <skill>` token. Every downstream caller (`has_route_line`, `decide`,
+  `run`, and `route_stop_guard` via the shared internals) is therefore unchanged. Prose remains a
+  valid declaration — this is additive, not a replacement, so a turn that writes the old line still
+  passes.
+- **`hooks/route_emit.py` — the instruction asks for a call, not a line.** The format block now
+  prints the lane→skill table and forbids writing the verdict as text. Net cost of the whole change
+  is +246 B against the injected-block ceiling (21,950 → 22,196 of 22,300), paid for by cutting
+  prose rather than raising the ceiling, as that test's docstring requires.
+- **`STAGE →` lines suppressed from omha's side.** The sibling harnesses (omd/omp/omx) ask for a
+  STAGE line in their own injected blocks, and no hook enforces one. Rather than edit three
+  separate GitHub-sourced repos, omha now declares precedence over that request. The information is
+  not lost: a stage is visible on the HUD the moment its harness skill is invoked, so the line was
+  duplicating what the statusline already shows.
+
+### Notes
+- Extended thinking was evaluated as a hiding place for the verdict and rejected on evidence:
+  Claude Code persists thinking blocks with an empty `thinking` field (signature only), so a hook
+  has nothing to read. Text and `tool_use` are the only channels a hook can observe, and both are
+  visible to the user — no channel exists that hides the verdict while keeping it enforceable.
+- `route_guard`'s PreToolUse matcher is `Bash|Agent|Task|Edit|Write`. `Skill` is absent, so the
+  declaring call cannot be blocked by the gate it satisfies — no self-reference deadlock. A Bash
+  based declaration would have needed that exemption built by hand.
+
 ## 0.8.3 — 2026-08-05
 An intake-side release: the cascade sorted work by *what artifact it produces*, so every lane
 presupposed a decided objective. A request whose defining property is that the user has **not yet

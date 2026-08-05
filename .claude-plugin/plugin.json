@@ -1,9 +1,17 @@
 {
   "name": "oh-my-heroacademia",
   "description": "Meta-orchestration harness. Routes each request to the right lane (superpowers / oh-my-claudecode / handle-directly) via a UserPromptSubmit hook that reads declarative harness cards.",
-  "author": { "name": "kimseungmin" },
+  "author": {
+    "name": "kimseungmin"
+  },
   "license": "MIT",
-  "keywords": ["claude-code", "plugin", "routing", "orchestration", "meta"],
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "routing",
+    "orchestration",
+    "meta"
+  ],
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -12,7 +20,9 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/route_emit.py"]
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/route_emit.py"
+            ]
           }
         ]
       }
@@ -24,7 +34,9 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/cross_lane_emit.py"]
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/cross_lane_emit.py"
+            ]
           }
         ]
       },
@@ -34,7 +46,9 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/route_guard.py"]
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/route_guard.py"
+            ]
           }
         ]
       },
@@ -44,7 +58,9 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/redact_guard.py"]
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/redact_guard.py"
+            ]
           }
         ]
       }
@@ -55,10 +71,21 @@
           {
             "type": "command",
             "command": "python3",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/route_stop_guard.py"]
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/route_stop_guard.py"
+            ]
           }
         ]
       }
     ]
-  }
+  },
+  "skills": [
+    "./skills/route-direct/",
+    "./skills/route-docs/",
+    "./skills/route-exp/",
+    "./skills/route-omc/",
+    "./skills/route-project/",
+    "./skills/route-scholar/",
+    "./skills/route-sp/"
+  ]
 }
