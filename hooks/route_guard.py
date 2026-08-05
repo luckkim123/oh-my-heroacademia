@@ -17,12 +17,6 @@ import time
 # through the code" does not false-pass.
 _ROUTE_RE = re.compile(r"ROUTE\s*(?:->|→|:)")
 
-# A routing declaration made as a tool call instead of prose: the model invokes
-# one of omha's `route-<lane>` skills. Namespaced ("oh-my-heroacademia:route-omc")
-# or bare ("route-omc"); anchored at a namespace boundary so an unrelated skill
-# whose name merely contains "route-" does not false-pass.
-_ROUTE_SKILL_RE = re.compile(r"(?:\A|:)route-[a-z0-9-]+\Z")
-
 
 def has_route_line(text):
     """True iff `text` contains a fresh ROUTE routing declaration."""
@@ -50,36 +44,13 @@ def _is_real_user_turn(rec):
 
 
 def _assistant_text(rec):
-    """The turn's routing-visible window for one assistant message ('' if none).
-
-    Two channels count as a declaration, and both are folded into one string so
-    every downstream caller (has_route_line / decide / run / route_stop_guard)
-    stays unchanged:
-      · prose  — the `> **ROUTE →** <lane>` line the model writes out loud
-      · call   — a `route-<lane>` Skill invocation, which declares the lane
-                 without spending a line of the user-visible reply
-
-    A route skill call is rendered as a synthetic `ROUTE → <skill>` token so the
-    existing _ROUTE_RE matches it. Extended thinking is deliberately NOT a
-    channel: Claude Code stores thinking blocks with an empty `thinking` field
-    (signature only), so there is nothing for a hook to read.
-    """
+    """Concatenated text of an assistant message's text blocks ('' if none)."""
     if rec.get("type") != "assistant":
         return ""
     content = rec.get("message", {}).get("content")
     if not isinstance(content, list):
         return ""
-    parts = []
-    for b in content:
-        if not isinstance(b, dict):
-            continue
-        if b.get("type") == "text":
-            parts.append(b.get("text", ""))
-        elif b.get("type") == "tool_use" and b.get("name") in ("Skill", "proxy_Skill"):
-            skill = (b.get("input") or {}).get("skill")
-            if isinstance(skill, str) and _ROUTE_SKILL_RE.search(skill):
-                parts.append(f"ROUTE → {skill}")
-    return "".join(parts)
+    return "".join(b.get("text", "") for b in content if b.get("type") == "text")
 
 
 def _sentinel_matches_turn(sentinel_turn_id, turn_id):

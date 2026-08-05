@@ -1,7 +1,6 @@
 {
   "name": "oh-my-experiments",
   "lane_type": "work-style",
-  "route_skill": "route-exp",
   "description": "Experiment-analysis, design & program-planning lane. Route here when the work is about ANALYZING experiment/training RESULTS, DESIGNING THE NEXT EXPERIMENT, or PLANNING A MULTI-STAGE EXPERIMENT LINE: compare runs, read eval/training curves, diagnose why a run regressed, propose the next config, run a semi-autonomous analyze->design->eval loop, or lay out the phased plan for a research line that has no runs yet. Governs HOW you work on experiments — NOT writing the model code itself (that is superpowers), NOT generic parallel throughput (that is oh-my-claudecode). A plan is still THIS lane even when it derives from a research/reading document instead of a report.md: the absence of a report is not a reason to fall through to superpowers and write into `.sp/plans/` — a multi-stage experiment line belongs in `.omx/programs/<id>/PLAN.md` (`omx program-init --id <id>`, openable before its first campaign exists). Routing here is a COMMITMENT TO ACT, not a label: once you declare this lane you MUST actually invoke an omx skill / the project's omx engine (exp-init/analyze/design/loop, `omx program-init`, the .omx/profile analyzer, `omx` CLI, `omx wiki`) — declaring 'ROUTE -> oh-my-experiments' and then hand-reading raw TensorBoard / curves yourself is the exact anti-pattern this lane exists to stop.",
   "url": "http://localhost:8973/omx",
   "version": "0.10.0",
