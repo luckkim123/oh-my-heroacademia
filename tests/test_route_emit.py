@@ -161,6 +161,8 @@ def test_main_still_emits_when_one_card_is_malformed(tmp_path, monkeypatch, caps
     assert out.strip(), "malformed sibling card must not swallow all routing output"
     ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
     assert "oh-my-claudecode" in ctx
+
+
 def test_context_has_design_validity_gate(tmp_path):
     """판단형 검토(설계·타당성)가 self-approval 로 handle-directly 에 새는 결함을 막는
     재라우팅 게이트가 있어야 한다 (yaw-rate 사례: 단일 컨텍스트가 논증을 authoring 하고
@@ -179,3 +181,52 @@ def test_context_has_design_validity_gate(tmp_path):
     assert "학술적으로 의미있나" in ctx and "oh-my-scholar" in ctx
     # (4) 과흡인 밸브 — '잠정 의견' escape 가 있어야 라우팅 마비 방지
     assert "잠정 의견" in ctx
+
+
+# ─── group: intent-crystallization — an undecided GOAL must not fall to handle-directly ─
+
+def test_context_has_intent_crystallization_branch(tmp_path):
+    """캐스케이드에 '목표 자체가 미결정' 분기가 있어야 하고, 그 목적지 스킬 이름이
+    *주입되는* 텍스트 안에 있어야 한다.
+
+    결함(2026-08-05 재현): 카드의 skills[].examples 와 triggers 는 route_emit 이
+    주입하지 않는다(description 만 주입). 그래서 sp 카드의 'no direction yet' 예시도,
+    omc 의 deep-interview 도 세션에서 보이지 않았고, 목표 미결정 요청은 소거법으로
+    handle-directly 에 떨어져 3턴 연속 요청받지 않은 결론이 생산됐다.
+    Fails if the branch (or either destination name) is deleted from
+    build_routing_context — 이 assert 는 fix 이전 트리에서 실제로 실패한다."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane.", "lane_type": "work"}))
+    ctx = route_emit.build_routing_context(tmp_path)
+    # (1) 분기 present — 목표 미결정을 판정 대상으로 삼는다
+    assert "의중 미결정 게이트" in ctx
+    # (2) 도달 가능한 목적지 스킬이 *이름으로* 주입돼야 (F1: examples/triggers 는 안 나감)
+    assert "deep-interview" in ctx and "brainstorming" in ctx
+    # (3) 과흡인 밸브 — 가벼운 요청까지 인터뷰로 끌면 원래 버그보다 나쁜 회귀
+    assert "인터뷰로 끌지 말 것" in ctx
+
+
+def test_handle_directly_is_positively_defined(tmp_path):
+    """handle-directly 가 '아무것도 안 걸렸다'는 *소거법*만으로 성립하면 안 된다.
+    Fails if the positive definition is reverted to the exclusion-only 3순위 line."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane.", "lane_type": "work"}))
+    ctx = route_emit.build_routing_context(tmp_path)
+    assert "적극적 정의" in ctx
+    assert "소거법은 근거가 못 된다" in ctx
+    # 미결정 목표는 handle-directly 가 아니라는 연결이 명시돼야 (2.5순위와 결합)
+    assert "여러 턴짜리 설계 탐색" in ctx
+
+
+def test_emitted_context_stays_under_byte_ceiling():
+    """이 블록은 *모든 세션의 모든 턴*에 주입된다 — 증가는 영구 비용이다.
+
+    Baseline 17,193 B (2026-08-05, 이 릴리스 이전 main). 0.8.3 이 쓴 비용:
+    +2,630 B (설계·타당성 self-approval 게이트) +1,859 B (의중 미결정 게이트 +
+    handle-directly 적극적 정의 + ANALYZE remedy 예외 + 카드 2건) = 21,682 B.
+    Ceiling 22,000 B (여유 318 B) — 다음 카드/문구 편집이 조용히 예산을 터뜨리면
+    실패한다(그때는 무엇을 잘라 지불할지 결정하라). 실제 cards/ 를 읽으므로 카드
+    description 이 길어져도 잡힌다."""
+    ctx = route_emit.build_routing_context(route_emit.CARDS_DIR)
+    size = len(ctx.encode("utf-8"))
+    assert size <= 22_000, f"routing block grew to {size} B (baseline 17,193) — pay for it or cut something"
