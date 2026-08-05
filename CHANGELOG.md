@@ -1,5 +1,133 @@
 # Changelog
 
+## 0.8.3 — 2026-08-05
+An intake-side release: the cascade sorted work by *what artifact it produces*, so every lane
+presupposed a decided objective. A request whose defining property is that the user has **not yet
+decided what they want** matched nothing and fell to `handle-directly` by elimination.
+
+### Added
+- **Cascade tier 2.5 — the intent-crystallization gate (`hooks/route_emit.py`).** An undecided
+  goal now routes to the harness built for it: `oh-my-claudecode` (deep-interview) when no options
+  have been formed yet, `superpowers` (brainstorming) when two or more are already on the table and
+  the work is narrowing between them. Firing is an **intersection**, mirroring the sibling
+  design/validity gate: (i) the user has not decided what they want AND (ii) the answer would run as
+  a multi-turn design exploration. Observed 2026-08-05 (/workspace ALBC session): an open
+  research-design question ("나도 자세하게 설명하긴 좀 어려운데 … 좀 같이 논의를 해보는건
+  어때?") produced `ROUTE → handle-directly` for three consecutive turns, each deepening a verdict
+  the user had not asked for. Routing changed only on turn 4, when the user typed the literal
+  string "deep interview" and OMC's magic-keyword hook fired — intent never triggered it, a
+  keyword did. Over-pull valve exempts three cases — an explicitly-light request, a single-fact
+  check, and a trivial taste judgment (variable name, formatting) — the same escape list the
+  sibling gate carries.
+- **Tier 2 no longer shadows tier 2.5.** The cascade is first-match top-down and tier 2 ("pick a
+  work-style lane") targets the same lanes tier 2.5 routes to, so a lane picked at tier 2 would
+  never reach the new gate. Tier 2 now defers explicitly when intent is undecided. This was not
+  hypothetical: the same message replayed against the old block was picked up at tier 2 as
+  `oh-my-experiments`.
+- **The ANALYZE gate's remedy now has a goal-undecided exception.** `모호하면` → "먼저 사용자에게
+  확인하라" prescribed one ad-hoc question, which contradicts tier 2.5's "hand it to the harness"
+  in the same injected block. Detail ambiguity is still asked directly; an undecided *goal* now
+  goes to the gate. The trigger itself was deliberately **not** hardened — it was not followed in
+  the incident, and over-correcting a rule that was simply not obeyed costs every future turn.
+- **`cards/omc.json` mirrors the sp exception.** Its closing sentence still fenced sp entry to
+  exactly three explicit gates, which would have contradicted the sp card and the new tier sitting
+  beside it in the same block. Both cards now declare the same non-gate exception, guarded by
+  `test_undecided_goal_exception_is_in_both_work_style_descriptions`.
+- **`handle-directly` has a positive definition** — single-fact lookup, summarizing what is
+  already decided, light conversational reply, and a provisional (not settled) opinion. "Nothing
+  else matched" is no longer sufficient grounds, mirroring the anti-fallthrough guard tier 0
+  already had for omp.
+- **`cards/omc.json` `triggers.skills` gains `deep-interview`.** The skill appeared nowhere in the
+  card — description or triggers — so nothing in omha referred to it and only a literal keyword
+  match could reach it. What makes it reachable is the cascade naming it; this entry makes the
+  push channel in `cross_lane_emit.py` label the skill consistently with the lane that now owns it.
+  Guarded by `test_omc_card_declares_deep_interview_trigger`.
+- **`cards/superpowers.json` — one non-gate exception.** The injected description said to route
+  here "only when the operator EXPLICITLY wants a structural discipline gate" and "Do NOT route
+  here merely because … a plan is being made", while the single matching signal ("어떤 방향이
+  나을지 비교 (no direction yet)") sat in `skills[].examples` — a field `route_emit` parses but
+  never injects. The reachable text actively discouraged the correct routing; the undecided-goal
+  case is now named in the description itself.
+- **Byte-budget guard (`test_emitted_context_stays_under_byte_ceiling`).** This block is injected
+  into every turn of every session, so growth is a permanent cost. Baseline 17,193 B →
+  **21,950 B** (+2,630 B design/validity gate, +2,127 B this fix); ceiling **22,300 B**, i.e.
+  350 B of headroom, so the next card edit that grows the block has to decide what to cut. The
+  guard earned its keep twice during development — it went red after the review fixes and again
+  after the automated-review fixes, and both times the answer was to cut prose, not raise the
+  ceiling.
+
+### Changed
+- **`hooks/route_emit.py` — design/validity self-approval gate.** Cherry-picked from
+  `exp/handle-directly-overuse-fix` (authored 2026-07-09, never merged, and — unlike what that
+  branch's tip suggested — never pushed; it existed only in one local clone). Value/validity
+  *arguments* ("is this design sound / academically meaningful") are not code-fact lookups, so
+  they slipped past the code-fact gate, fell to `handle-directly`, and one context authored an
+  argument and approved it. It is the **output** side of the same defect family this release
+  fixes on the **input** side, and it edits the same region of the cascade — carrying it here
+  keeps one coherent `handle-directly` definition instead of two conflicting ones.
+
+### Decisions
+- **Fix delivered as cascade prose + two card edits, NOT by injecting `skills[].examples` /
+  `triggers.skills` in `build_routing_context`.** Injecting those fields would fix the
+  root cause structurally (only `description` reaches the session) and benefit every future card,
+  but it pays the cost on all six cards, on every turn, forever — ~60 example strings to reach
+  one. Naming the destination once in the cascade costs 1,859 B and closes the same case. The
+  structural option stays open if a second card ever needs its examples in reach.
+- **What was cut to pay for the new prose: two rationale clauses (~175 B), and nothing else.** An
+  over-engineering review pass removed "미결정 목표 위에 쌓은 결론은 요청받지 않은 산출물이다"
+  from the cascade and "a verdict produced against an undecided goal is the failure mode this
+  closes" from the sp card — both explained *why* without instructing *what*, at permanent
+  per-turn cost. No further offset was taken, and that is a decision rather than an oversight: the
+  remaining duplication in the block (the ROUTE format spec appearing three times) is the
+  anti-truncation placement `test_route_format_spec_lands_in_head_before_card_bodies` exists to
+  protect, and consolidating two sibling gates' valves would rewrite load-bearing text from earlier
+  incident fixes inside an unrelated release. The tightened ceiling carries that debt instead.
+- **Branched from `main`, not from `exp/handle-directly-overuse-fix`.** That branch is 1 commit
+  ahead and **38 behind** (it predates 0.8.1/0.8.2, CI, ruff, LICENSE, `redact_guard.py`) — its
+  earlier commits were already merged at `876393d`, and building on it would have reverted a
+  month of main. The one commit worth keeping was cherry-picked instead (see Changed).
+- **Out of scope, recorded not fixed:** OMC's magic-keyword matcher fires on literal phrases only
+  (`[MAGIC KEYWORD: DEEP-INTERVIEW]`). Whether it should do intent detection belongs to the OMC
+  plugin, not omha.
+
+### Verification
+- Suite: 163 passed, 1 pre-existing unrelated failure (`test_card_sync.py::…[oh-my-docs]` — local
+  sibling-clone version drift, fails identically on clean `main`; CI skips it). `ruff check .` clean,
+  `check_tag_drift.py` PASS.
+- Both new behavioral tests were watched failing on the pre-fix tree — that failure *is* the
+  reproduction of the defect. The card-level tests were mutation-checked (removing the trigger,
+  padding a card description) and each fails its guard.
+- Reviewed independently before merge (correctness lens + over-engineering lens), verdict REQUEST
+  CHANGES on the first round; all three blocking findings are folded in above (ANALYZE remedy
+  contradiction, the omc mirror sentence, and a self-confirming negative control), plus the
+  intersection valve and the tier-2 shadowing clause.
+- A second automated review round on the PR caught two more contradictions, both fixed: the card
+  descriptions still sent every undecided goal to brainstorming after the cascade split had been
+  rewritten around whether options exist (they now carry the same split), and the `handle-directly`
+  preamble stated the design/validity gate as a single condition while the gate itself requires the
+  intersection (the preamble now names both conditions).
+- Replay (a model reading the emitted block verbatim, one isolated session per case — there is no
+  request classifier in this repo, so "request X routes to lane Y" is not unit-testable):
+
+  | probe | routed to | via |
+  |:--|:--|:--|
+  | the incident's verbatim turn-1 message | `oh-my-claudecode` (deep-interview) | tier 2.5 — cited "no options formed yet" |
+  | `"이 상수 값이 뭐야"` | `handle-directly` | single-fact lookup exception |
+  | `"이 변수명 어떻게 생각해?"` | `handle-directly` | tier-2.5 valve, trivial taste judgment |
+  | `"latent dim 9→12 어떻게 생각해?"` | `oh-my-claudecode` | design/validity gate (pre-existing) |
+  | `"koopman lifting이 우리 encoder latent랑 비슷해? 어떻게 생각해?"` | `oh-my-claudecode` | research-delegation obligation (pre-existing) |
+
+  Tier 2.5 over-pulled in **none** of the four control probes — it fired only on the genuinely
+  undecided goal. Two controls did leave `handle-directly`, but through gates that predate this
+  release, which is worth stating plainly: the block as a whole is aggressive about pulling
+  opinion-shaped questions out of `handle-directly`, and that property is not new in 0.8.3.
+  Second caveat, stated rather than buried: the incident message replayed against the **old** block
+  routed `oh-my-experiments`, not the `handle-directly` the live session actually emitted. A
+  single-shot replay has no conversation history and runs a different model, so it does not
+  reproduce the original failure — the replay evidence covers the new block only, not a
+  before/after delta. The mechanical before/after delta is the two behavioral tests failing on the
+  pre-fix tree.
+
 ## 0.8.2 — 2026-08-04
 ### Changed
 - **`cards/omx.json` claims experiment PLANNING, not just analysis/design.** The lane
