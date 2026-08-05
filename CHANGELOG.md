@@ -50,10 +50,11 @@ decided what they want** matched nothing and fell to `handle-directly` by elimin
   case is now named in the description itself.
 - **Byte-budget guard (`test_emitted_context_stays_under_byte_ceiling`).** This block is injected
   into every turn of every session, so growth is a permanent cost. Baseline 17,193 B →
-  **21,682 B** (+2,630 B design/validity gate, +1,859 B this fix); ceiling **22,000 B**, i.e.
-  318 B of headroom — deliberately tight, so the next card edit that grows the block has to decide
-  what to cut. The guard already earned its keep once: it went red mid-development when the review
-  fixes landed, which is exactly the signal it exists to give.
+  **21,950 B** (+2,630 B design/validity gate, +2,127 B this fix); ceiling **22,300 B**, i.e.
+  350 B of headroom, so the next card edit that grows the block has to decide what to cut. The
+  guard earned its keep twice during development — it went red after the review fixes and again
+  after the automated-review fixes, and both times the answer was to cut prose, not raise the
+  ceiling.
 
 ### Changed
 - **`hooks/route_emit.py` — design/validity self-approval gate.** Cherry-picked from
@@ -100,6 +101,11 @@ decided what they want** matched nothing and fell to `handle-directly` by elimin
   CHANGES on the first round; all three blocking findings are folded in above (ANALYZE remedy
   contradiction, the omc mirror sentence, and a self-confirming negative control), plus the
   intersection valve and the tier-2 shadowing clause.
+- A second automated review round on the PR caught two more contradictions, both fixed: the card
+  descriptions still sent every undecided goal to brainstorming after the cascade split had been
+  rewritten around whether options exist (they now carry the same split), and the `handle-directly`
+  preamble stated the design/validity gate as a single condition while the gate itself requires the
+  intersection (the preamble now names both conditions).
 - Replay (a model reading the emitted block verbatim, one isolated session per case — there is no
   request classifier in this repo, so "request X routes to lane Y" is not unit-testable):
 

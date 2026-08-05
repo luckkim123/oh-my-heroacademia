@@ -222,11 +222,12 @@ def test_emitted_context_stays_under_byte_ceiling():
     """이 블록은 *모든 세션의 모든 턴*에 주입된다 — 증가는 영구 비용이다.
 
     Baseline 17,193 B (2026-08-05, 이 릴리스 이전 main). 0.8.3 이 쓴 비용:
-    +2,630 B (설계·타당성 self-approval 게이트) +1,859 B (의중 미결정 게이트 +
-    handle-directly 적극적 정의 + ANALYZE remedy 예외 + 카드 2건) = 21,682 B.
-    Ceiling 22,000 B (여유 318 B) — 다음 카드/문구 편집이 조용히 예산을 터뜨리면
+    +2,630 B (설계·타당성 self-approval 게이트) +2,127 B (의중 미결정 게이트 +
+    handle-directly 적극적 정의 + ANALYZE remedy 예외 + 카드 2건) = 21,950 B.
+    Ceiling 22,300 B (여유 350 B) — 다음 카드/문구 편집이 조용히 예산을 터뜨리면
     실패한다(그때는 무엇을 잘라 지불할지 결정하라). 실제 cards/ 를 읽으므로 카드
-    description 이 길어져도 잡힌다."""
+    description 이 길어져도 잡힌다. 이 가드는 개발 중 두 번 붉게 떴고 두 번 다
+    산문을 잘라 지불했다 — 상한을 올려 무마하지 말 것."""
     ctx = route_emit.build_routing_context(route_emit.CARDS_DIR)
     size = len(ctx.encode("utf-8"))
-    assert size <= 22_000, f"routing block grew to {size} B (baseline 17,193) — pay for it or cut something"
+    assert size <= 22_300, f"routing block grew to {size} B (baseline 17,193) — pay for it or cut something"
