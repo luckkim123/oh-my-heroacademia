@@ -26,15 +26,27 @@ def has_route_line(text):
 def _is_real_user_turn(rec):
     """A genuine user message (the turn boundary) — NOT a tool_result line.
 
-    Real user msg : type=user, content[0] is a plain string OR a {"type":"text"}
-                    block, no toolUseResult.
+    Real user msg : type=user, no toolUseResult, and content is either a bare
+                    string, or a list whose first block is a string or
+                    {"type":"text"}.
     Tool result   : type=user, content[0].type=='tool_result', toolUseResult set.
+
+    The bare-string form is not a variant to be tolerant about — it is what a
+    typed prompt actually looks like. Measured on one live transcript: 4 real
+    prompts, all `content` as a plain string; 146 tool results, all list-form
+    with toolUseResult. Requiring a list therefore found NO turn boundary in the
+    whole session, and a None turn_id makes route_stop_guard allow every stop and
+    leaves _scan_turn's window spanning the entire transcript — where some older
+    turn's ROUTE line always matches, so route_guard allows every tool call too.
+    Both gates were silently open on this schema.
     """
     if rec.get("type") != "user":
         return False
     if "toolUseResult" in rec:
         return False
     content = rec.get("message", {}).get("content")
+    if isinstance(content, str):
+        return bool(content)
     if not isinstance(content, list) or not content:
         return False
     first = content[0]

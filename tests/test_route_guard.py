@@ -388,3 +388,19 @@ def test_sentinel_path_normal_id_unchanged():
     """Ordinary alphanumeric/uuid-style session_id passes through untouched."""
     path = rg._sentinel_path("abc123-DEF_456")
     assert os.path.basename(path) == "omha_route_gate_abc123-DEF_456.json"
+
+
+def test_real_user_turn_accepts_bare_string_content():
+    """실측 스키마 회귀 가드 (2026-08-10). 타이핑된 프롬프트는 message.content 가
+    리스트가 아니라 *문자열*이다 — 리스트만 받던 판정은 라이브 트랜스크립트에서
+    턴 경계를 하나도 못 찾았고(실측: 실제 프롬프트 4건 전부 문자열, tool_result
+    146건은 전부 리스트+toolUseResult), turn_id=None 이면 Stop 게이트는 모든 정지를
+    허용하고 _scan_turn 의 window 는 트랜스크립트 전체로 벌어져 옛 턴의 ROUTE 가
+    잡히므로 PreToolUse 게이트도 전부 통과한다 — 두 게이트가 조용히 열려 있었다."""
+    assert rg._is_real_user_turn(
+        {"type": "user", "uuid": "u1", "message": {"content": "라우팅 고쳐줘"}})
+    # 빈 문자열은 턴 경계가 아니다
+    assert not rg._is_real_user_turn({"type": "user", "message": {"content": ""}})
+    # tool_result 는 여전히 제외 (문자열이든 리스트든 toolUseResult 가 있으면 아님)
+    assert not rg._is_real_user_turn(
+        {"type": "user", "toolUseResult": {}, "message": {"content": "x"}})
