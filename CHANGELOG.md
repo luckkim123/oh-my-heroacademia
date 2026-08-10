@@ -11,6 +11,28 @@ The byte-budget guard did not fire because it measured the wrong unit. 21,950 B 
 
 (0.8.4 was reverted before release; this ships as 0.8.5 so the number is not reused.)
 
+### Added
+- **Routing verdict log — `.omha/routing.jsonl` (`hooks/route_log.py`).** The Stop hook now appends
+  one record per turn: the lanes declared (two or more means the turn re-routed mid-flight), whether
+  the ROUTE line was skipped, whether ANALYZE fired, and the first 160 chars of the prompt. It runs
+  independently of the gate decision, because a turn that *skipped* its ROUTE is the most
+  interesting record in the file.
+
+  **Opt-in by directory**: writes only where `.omha/` already exists — a plugin hook runs in every
+  repository the operator opens, and silently creating a dot-dir in each of them is not a routing
+  plugin's business. `mkdir .omha` enables it; deleting the directory disables it. There is
+  deliberately no `os.getcwd()` fallback: a hook's process cwd is not the session's cwd, and
+  guessing wrote a log into this repo during development.
+
+  Read it with `python3 hooks/route_log.py <project-root>` — lane distribution, miss and re-route
+  counts, and the prompts that skipped a verdict. `load()` keeps only the last record per `turn_id`,
+  because the Stop gate fires twice on a turn it sent back for its ROUTE line and counting both
+  would report roughly double the real miss rate.
+
+  The point is to stop editing the cards from anecdote. Every gate added so far was argued from one
+  remembered session ("this session repeatedly got X wrong"), and that is how the block reached
+  15,714 chars. Whether a gate earns its tokens is now a question the data can answer.
+
 ### Fixed
 - **Unit bug in the size guard (`tests/test_route_emit.py`).** `test_emitted_context_stays_under_byte_ceiling`
   → `..._char_ceiling`: asserts `len(ctx)`, not `len(ctx.encode())`. The documented host cap is

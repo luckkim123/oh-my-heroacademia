@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import route_guard as rg
+import route_log
 
 _STOP_REASON = (
     "You finished this turn without emitting a ROUTE line. Emit "
@@ -65,12 +66,32 @@ def run(stdin_obj, sentinel_read=rg._sentinel_read, sentinel_write=rg._sentinel_
         return 0, None
 
 
+def log_turn(stdin_obj, scan=rg._scan_turn, writer=route_log.record):
+    """Append this turn's verdict to `.omha/routing.jsonl` (no-op when off).
+
+    Runs independently of the gate decision — a turn that SKIPPED its ROUTE line
+    is the most interesting record in the file, so it must be logged too. Its own
+    scan rather than run()'s, so a logging change can never perturb the gate."""
+    try:
+        transcript = stdin_obj.get("transcript_path")
+        if not transcript:
+            return None
+        window, turn_id = scan(transcript)
+        if turn_id is None:
+            return None  # no resolvable turn (orphan/subagent transcript)
+        prompt = route_log.turn_prompt(transcript, rg._is_real_user_turn)
+        return writer(stdin_obj.get("cwd"), turn_id, window, prompt)
+    except Exception:
+        return None  # a logger must never break the session
+
+
 def main():
     try:
         stdin_obj = json.load(sys.stdin)
     except Exception:
         return 0
     code, out = run(stdin_obj)
+    log_turn(stdin_obj)
     if out is not None:
         print(json.dumps(out))
     return code
