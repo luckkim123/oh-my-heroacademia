@@ -276,14 +276,18 @@ def test_emitted_context_stays_under_char_ceiling():
 
     ⚠️ 단위는 CHARACTER 다. 바이트가 아니다. 이 가드는 2026-08-10 까지 바이트로
     쟀고, 그래서 실제 사고를 못 잡았다: 블록이 21,950 B(가드 22,300 B 통과)인데
-    한국어라 15,714 자였고, Claude Code 는 hook additionalContext 를 ~15K *자*
-    에서 잘라 파일로 빼버렸다 — 라우팅 규칙의 86%가 조용히 모델에 안 닿았다.
-    훅은 exit 0, 경로도 주입되니 겉보기엔 정상이라 아무 알람도 울리지 않는다.
+    한국어라 15,714 자였고, Claude Code 는 초과분을 파일로 빼고 2 KB preview 만
+    주입했다 — 라우팅 규칙의 86%가 조용히 모델에 안 닿았다. 훅은 exit 0, 경로도
+    주입되니 겉보기엔 정상이라 아무 알람도 울리지 않는다.
 
-    실측 경계: 12,537 자(16.3 KB) 통과 / 15,714 자(21.9 KB) 잘림. 정확한 상수는
-    확인 못 했다. 이제 훅은 요약+포인터뿐이라 상한을 4,000 자로 조인다 — 상세가
-    스킬 본문으로 내려간 이상 훅이 다시 커질 이유가 없고, 여유를 남겨두면 그
-    여유만큼 산문이 다시 기어든다. 상한을 올려 무마하지 말 것."""
+    공식 상한은 **10,000 자**다 (hooks 문서: "Hook output strings, including
+    additionalContext, systemMessage, and plain stdout, are capped at 10,000
+    characters"). 사고 당시 "12,537 자는 통과했다"고 추정했으나 그건 오독이었다 —
+    트랜스크립트의 attachment 레코드는 모델이 preview 만 받았어도 전문을 남긴다.
+
+    상한을 4,000 자로 조인다: 상세가 skills/routing/SKILL.md 로 내려간 이상 훅이
+    커질 이유가 없고, 공식 상한(10,000)까지 여유를 열어두면 그 여유만큼 산문이
+    다시 기어든다. 상한을 올려 무마하지 말 것."""
     ctx = route_emit.build_routing_context(route_emit.CARDS_DIR)
     size = len(ctx)
     assert size <= 4_000, f"per-turn block grew to {size} chars — move it to skills/routing/SKILL.md"

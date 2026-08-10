@@ -13,10 +13,14 @@ The byte-budget guard did not fire because it measured the wrong unit. 21,950 B 
 
 ### Fixed
 - **Unit bug in the size guard (`tests/test_route_emit.py`).** `test_emitted_context_stays_under_byte_ceiling`
-  → `..._char_ceiling`: asserts `len(ctx)`, not `len(ctx.encode())`. Ceiling 12,000 chars, set below
-  the largest size measured to survive intact (12,537 chars / 16.3 KB); 15,714 chars / 21.9 KB is
-  measured to truncate. The exact host constant was not located — the ceiling is anchored to
-  measurement, not to a guess. Raising it re-opens the silent cut.
+  → `..._char_ceiling`: asserts `len(ctx)`, not `len(ctx.encode())`. The documented host cap is
+  **10,000 characters** for `additionalContext`, `systemMessage` and plain stdout alike; the guard is
+  set at 4,000 because the hook is now a summary and has no reason to approach the cap. Raising it
+  re-opens the silent cut.
+
+  (An earlier draft of this entry claimed 12,537 chars had been measured to pass. That was a
+  misreading: a transcript `attachment` record stores the full hook output even when the model was
+  handed only the preview, so it is not evidence of delivery.)
 
 ### Changed
 - **The hook is a summary + pointer; the manual moved to a skill.** `hooks/route_emit.py` now
