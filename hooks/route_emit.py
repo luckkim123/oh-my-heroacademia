@@ -1,15 +1,94 @@
-"""omha stage-1 UserPromptSubmit hook: read cards/*.json (stdlib only),
-inject a lane-routing checkpoint. NO a2a-sdk (runtime dep = 0).
+"""omha stage-1 routing hook: read cards/*.json (stdlib only), inject a
+lane-routing checkpoint. NO a2a-sdk (runtime dep = 0).
 
 The card knowledge lives in cards/*.json (single source of truth). This hook
 only *reads and injects* it — it never embeds the knowledge inline, so there is
 no drift (the anti-pattern the legacy claude-settings routing had between
-using-omc/SKILL.md and routing-verdict-reminder.py)."""
+using-omc/SKILL.md and routing-verdict-reminder.py).
+
+One script, two events (registered twice in plugin.json):
+
+  · UserPromptSubmit → build_routing_context(): the *decision surface*, repeated
+    every prompt. Lane bodies are cut to a digest here.
+  · SessionStart     → build_session_context(): the full card bodies, ONCE per
+    session. They do not change mid-session, so paying for them per-prompt was
+    N copies of an invariant.
+
+Why the split (2026-08-10): the per-prompt block had grown to 15,714 chars and
+Claude Code truncates hook additionalContext above ~15K chars — it persisted the
+block to a file and injected only a 2 KB preview, so ~86% of the routing rules
+silently stopped reaching the model. The byte-budget guard did not catch it
+because the host limit is counted in CHARACTERS, not bytes (21,950 B of Korean
+= 15,714 chars: under the 22,300 B guard, over the host's char limit)."""
 import json
+import re
 import sys
 from pathlib import Path
 
 CARDS_DIR = Path(__file__).resolve().parent.parent / "cards"
+
+# Per-lane digest cap for the per-turn block. The routing decision needs "what
+# work belongs here + precedence"; the rest of a card body is post-entry
+# guidance that rides the SessionStart block instead. 480 is what it takes for
+# the fat governance/work cards to still carry their route-here rule — 320 left
+# omp/omc as bare labels.
+LANE_DIGEST_CAP = 480
+
+
+def _digest(desc: str) -> str:
+    """Cut a card body down to LANE_DIGEST_CAP characters.
+
+    Always spends the whole budget. Dropping any sentence that would overflow
+    was the obvious version and it is wrong here: several cards open with a
+    short label ("Project-structure GOVERNANCE lane.") followed by one ~470-char
+    sentence carrying the entire route-here rule, so sentence-granular selection
+    emitted the label alone and nothing to route on. Prefer a sentence boundary
+    only when one falls in the last 40% of the budget; otherwise cut on a word.
+
+    Deterministic and lossless-by-reference: the full body is still injected
+    once per session by build_session_context(), so nothing is deleted — only
+    moved out of the per-prompt repetition."""
+    desc = desc.strip()
+    if len(desc) <= LANE_DIGEST_CAP:
+        return desc
+    cut = desc[:LANE_DIGEST_CAP]
+    ends = list(re.finditer(r"[.!?](?=\s|$)", cut))
+    if ends and ends[-1].end() >= LANE_DIGEST_CAP * 0.6:
+        return cut[:ends[-1].end()] + " …"
+    return cut.rsplit(" ", 1)[0].rstrip(" ,;:") + " …"
+
+
+def _read_cards(cards_dir: Path):
+    """Yield (name, lane_type, description) per readable card.
+
+    Per-card isolation: one malformed/mid-edit card must not silently drop
+    every OTHER card's routing info for the whole session (that was the bug --
+    main()'s blanket except swallowed a single bad card and lost all routing
+    injection). Skip just the bad card, keep going."""
+    for path in sorted(Path(cards_dir).glob("*.json")):
+        try:
+            d = json.loads(path.read_text())
+            yield d["name"], d.get("lane_type"), d["description"]
+        except (json.JSONDecodeError, OSError, KeyError, TypeError):
+            continue
+
+
+def build_session_context(cards_dir: Path) -> str:
+    """SessionStart block: the full lane bodies, injected ONCE per session.
+
+    The per-turn block carries only a digest of each; this is where the rest
+    lives. Invariant for the whole session, so it is paid for once instead of
+    once per prompt."""
+    bodies = [f"### {name}\n{desc.strip()}" for name, _, desc in _read_cards(cards_dir)]
+    if not bodies:
+        return ""
+    return (
+        "<omha-lanes>\n"
+        "레인 상세 (세션 1회 주입 — 매 턴 오는 <omha-routing> 은 이것의 요약본이다).\n"
+        "ROUTE 판정 시 요약만으로 애매하면 여기 본문을 근거로 삼아라.\n\n"
+        + "\n\n".join(bodies)
+        + "\n</omha-lanes>"
+    )
 
 
 def build_routing_context(cards_dir: Path) -> str:
@@ -31,18 +110,10 @@ def build_routing_context(cards_dir: Path) -> str:
     """
     governance_lanes, domain_lanes, work_lanes = [], [], []
     verdict_names = []
-    for path in sorted(Path(cards_dir).glob("*.json")):
-        # Per-card isolation: one malformed/mid-edit card must not silently
-        # drop every OTHER card's routing info for the whole session (that was
-        # the bug -- main()'s blanket except swallowed a single bad card and
-        # lost all routing injection). Skip just the bad card, keep going.
-        try:
-            d = json.loads(path.read_text())
-            line = f"- {d['name']}: {d['description']}"
-            name = d["name"]
-        except (json.JSONDecodeError, OSError, KeyError, TypeError):
-            continue
-        lane_type = d.get("lane_type")
+    for name, lane_type, desc in _read_cards(cards_dir):
+        # Digest, not the full body: the body is invariant for the session and
+        # rides build_session_context() once instead of every prompt.
+        line = f"- {name}: {_digest(desc)}"
         if lane_type == "governance":
             governance_lanes.append(line)
         elif lane_type == "domain":
@@ -78,6 +149,8 @@ def build_routing_context(cards_dir: Path) -> str:
         "단, 결론이 가치·타당성 판단을 settled 로 단정하는 것이고 아래 '설계·타당성 판단\n"
         "단정 직전' 게이트의 두 조건(비싼 downstream *그리고* 미검증 고리)을 모두 만족하면\n"
         "handle-directly 가 아니다 — 그 게이트로 재라우팅(논증의 self-approval 회피).\n\n"
+        "아래 레인 설명은 *요약본*이다(끝의 '…' = 잘림). 판정이 애매하면 세션 시작 시\n"
+        "1회 주입된 <omha-lanes> 블록의 해당 레인 본문을 근거로 삼아라.\n\n"
         "■ 거버넌스 하네스 (WHERE — 파일이 어디 속하나·트리가 규칙 지키나. 산출물 축과 직교):\n"
         f"{governance_body}\n\n"
         "■ 도메인 하네스 (WHAT — 만드는 산출물이 정함. 명확하면 *먼저* 여기로):\n"
@@ -205,11 +278,19 @@ def build_routing_context(cards_dir: Path) -> str:
 
 def main() -> int:
     try:
-        ctx = build_routing_context(CARDS_DIR)
+        stdin_obj = json.loads(sys.stdin.read() or "{}")
+    except Exception:
+        stdin_obj = {}  # no/closed/garbage stdin → behave as UserPromptSubmit
+    event = stdin_obj.get("hook_event_name") or "UserPromptSubmit"
+    try:
+        ctx = (build_session_context(CARDS_DIR) if event == "SessionStart"
+               else build_routing_context(CARDS_DIR))
     except Exception:
         return 0  # 카드 못 읽어도 세션 막지 않음 (fail-open)
+    if not ctx:
+        return 0
     print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "UserPromptSubmit", "additionalContext": ctx}}))
+        "hookEventName": event, "additionalContext": ctx}}))
     return 0
 
 

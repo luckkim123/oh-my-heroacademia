@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.8.5 — 2026-08-10
+The routing block had been silently truncated since the 08-10 card sync: at 15,714 characters it
+crossed Claude Code's inline limit for hook `additionalContext`, so the host persisted it to a file
+and injected a 2 KB preview instead — **86% of the routing rules stopped reaching the model**, with
+no error anywhere (the hook exits 0, a path is injected, nothing looks wrong).
+
+The byte-budget guard did not fire because it measured the wrong unit. 21,950 B of Korean prose is
+15,714 *characters*: comfortably under the 22,300 B ceiling, well over the host's character limit.
+
+(0.8.4 was reverted before release; this ships as 0.8.5 so the number is not reused.)
+
+### Fixed
+- **Unit bug in the size guard (`tests/test_route_emit.py`).** `test_emitted_context_stays_under_byte_ceiling`
+  → `..._char_ceiling`: asserts `len(ctx)`, not `len(ctx.encode())`. Ceiling 12,000 chars, set below
+  the largest size measured to survive intact (12,537 chars / 16.3 KB); 15,714 chars / 21.9 KB is
+  measured to truncate. The exact host constant was not located — the ceiling is anchored to
+  measurement, not to a guess. Raising it re-opens the silent cut.
+
+### Changed
+- **Two channels instead of one (`hooks/route_emit.py`, `.claude-plugin/plugin.json`).** The script
+  is now registered for `SessionStart` (`startup|resume|clear|compact`) as well as
+  `UserPromptSubmit`, and branches on `hook_event_name`:
+  - `build_routing_context()` — the decision surface, every prompt: 15,714 → **9,965 chars**.
+  - `build_session_context()` — the full card bodies in an `<omha-lanes>` block, **once** per
+    session (8,695 chars). They are invariant for the session, so paying per-prompt was N copies of
+    a constant.
+
+  Nothing is deleted: the per-turn block carries a digest of each lane (`_digest`, cap 480 chars,
+  truncation marked with `…`) and points at `<omha-lanes>` for the rest. Card bodies were 55.4% of
+  the old block — the largest line item, and the only one that is invariant.
+
+  Measured over a 90-prompt session: 1,414K → 905K characters injected (−36%), and the per-prompt
+  block is delivered whole again instead of 13% of it.
+
+- **`_digest` spends its whole budget.** Sentence-granular selection (drop any sentence that would
+  overflow) was tried first and is wrong for these cards: several open with a short label followed
+  by one ~470-char sentence carrying the entire route-here rule, so `oh-my-project` reduced to
+  "Project-structure GOVERNANCE lane (a third axis …)" — a label with nothing to route on. It now
+  cuts at a sentence boundary only when one falls in the last 40% of the budget, else on a word.
+
 ## 0.8.3 — 2026-08-05
 An intake-side release: the cascade sorted work by *what artifact it produces*, so every lane
 presupposed a decided objective. A request whose defining property is that the user has **not yet

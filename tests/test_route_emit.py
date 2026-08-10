@@ -83,8 +83,9 @@ def test_route_format_spec_lands_in_head_before_card_bodies(tmp_path):
     it survives preview truncation (the bug: spec was buried after ~7KB of cards)."""
     _six_cards(tmp_path)
     ctx = route_emit.build_routing_context(tmp_path)
-    # The big card bodies (600 'A'/'D' runs) mark where the bulk begins.
-    first_card_body = min(ctx.index("A" * 600), ctx.index("D" * 600))
+    # The card bodies (now digests of the 600 'A'/'D' runs) mark where the bulk
+    # begins — match a short prefix so this does not pin LANE_DIGEST_CAP.
+    first_card_body = min(ctx.index("A" * 50), ctx.index("D" * 50))
     # The ROUTE GFM format example and the inertia rule must precede the card bulk.
     assert ctx.index("ROUTE →") < first_card_body, "ROUTE format buried after card bodies"
     assert "관성" in ctx and ctx.index("관성") < first_card_body, "inertia rule buried after cards"
@@ -218,16 +219,47 @@ def test_handle_directly_is_positively_defined(tmp_path):
     assert "여러 턴짜리 설계 탐색" in ctx
 
 
-def test_emitted_context_stays_under_byte_ceiling():
+def test_emitted_context_stays_under_char_ceiling():
     """이 블록은 *모든 세션의 모든 턴*에 주입된다 — 증가는 영구 비용이다.
 
-    Baseline 17,193 B (2026-08-05, 이 릴리스 이전 main). 0.8.3 이 쓴 비용:
-    +2,630 B (설계·타당성 self-approval 게이트) +2,127 B (의중 미결정 게이트 +
-    handle-directly 적극적 정의 + ANALYZE remedy 예외 + 카드 2건) = 21,950 B.
-    Ceiling 22,300 B (여유 350 B) — 다음 카드/문구 편집이 조용히 예산을 터뜨리면
-    실패한다(그때는 무엇을 잘라 지불할지 결정하라). 실제 cards/ 를 읽으므로 카드
-    description 이 길어져도 잡힌다. 이 가드는 개발 중 두 번 붉게 떴고 두 번 다
-    산문을 잘라 지불했다 — 상한을 올려 무마하지 말 것."""
+    ⚠️ 단위는 CHARACTER 다. 바이트가 아니다. 이 가드는 2026-08-10 까지 바이트로
+    쟀고, 그래서 실제 사고를 못 잡았다: 블록이 21,950 B(가드 22,300 B 통과)인데
+    한국어라 15,714 자였고, Claude Code 는 hook additionalContext 를 ~15K *자*
+    에서 잘라 파일로 빼버렸다 — 라우팅 규칙의 86%가 조용히 모델에 안 닿았다.
+    훅은 exit 0, 경로도 주입되니 겉보기엔 정상이라 아무 알람도 울리지 않는다.
+
+    실측 경계: 12,537 자(16.3 KB) 통과 / 15,714 자(21.9 KB) 잘림. 정확한 상수는
+    확인 못 했으므로 통과가 확인된 12,537 자보다 아래인 12,000 자를 상한으로 둔다.
+    상한을 올려 무마하지 말 것 — 올리는 순간 다시 조용히 잘린다."""
     ctx = route_emit.build_routing_context(route_emit.CARDS_DIR)
-    size = len(ctx.encode("utf-8"))
-    assert size <= 22_300, f"routing block grew to {size} B (baseline 17,193) — pay for it or cut something"
+    size = len(ctx)
+    assert size <= 12_000, f"per-turn routing block grew to {size} chars — cut it or move it to build_session_context()"
+
+
+def test_session_context_stays_under_char_ceiling():
+    """세션 1회 블록도 같은 상한을 받는다 (같은 hook additionalContext 경로)."""
+    ctx = route_emit.build_session_context(route_emit.CARDS_DIR)
+    size = len(ctx)
+    assert size <= 12_000, f"session block grew to {size} chars — same silent-truncation cliff"
+
+
+def test_session_context_carries_full_card_bodies(tmp_path):
+    """턴 블록이 요약이면, 본문은 세션 블록이 *전부* 실어야 한다 (무손실 이전)."""
+    body = "Lane header sentence. " + "Detail sentence that must survive. " * 20
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": body, "lane_type": "work"}))
+    turn = route_emit.build_routing_context(tmp_path)
+    session = route_emit.build_session_context(tmp_path)
+    assert body.strip() in session, "session block must carry the untruncated body"
+    assert body.strip() not in turn, "per-turn block must carry only the digest"
+    assert "…" in turn, "a truncated digest must say so"
+
+
+def test_digest_keeps_whole_sentences_and_marks_truncation():
+    short = "Document DOMAIN lane."
+    assert route_emit._digest(short) == short          # 안 잘리면 '…' 없음
+    long = "First sentence here. " + "Filler sentence. " * 40
+    d = route_emit._digest(long)
+    assert len(d) <= route_emit.LANE_DIGEST_CAP + 2    # '…' 여유
+    assert d.startswith("First sentence here.")
+    assert d.endswith("…")
