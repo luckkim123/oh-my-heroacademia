@@ -1,25 +1,24 @@
-"""omha stage-1 routing hook: read cards/*.json (stdlib only), inject a
-lane-routing checkpoint. NO a2a-sdk (runtime dep = 0).
+"""omha stage-1 UserPromptSubmit hook: read cards/*.json (stdlib only), inject
+the lane-routing *decision surface*. NO a2a-sdk (runtime dep = 0).
 
 The card knowledge lives in cards/*.json (single source of truth). This hook
 only *reads and injects* it — it never embeds the knowledge inline, so there is
 no drift (the anti-pattern the legacy claude-settings routing had between
 using-omc/SKILL.md and routing-verdict-reminder.py).
 
-One script, two events (registered twice in plugin.json):
+Summary + pointer, not the manual (2026-08-10). The block had grown to 15,714
+chars and Claude Code truncates hook additionalContext above ~15K chars: it
+persisted the block to a file and injected a 2 KB preview, so ~86% of the rules
+silently stopped reaching the model. The byte-budget guard missed it because the
+host limit is counted in CHARACTERS, not bytes (21,950 B of Korean = 15,714
+chars: under the 22,300 B guard, over the host's limit).
 
-  · UserPromptSubmit → build_routing_context(): the *decision surface*, repeated
-    every prompt. Lane bodies are cut to a digest here.
-  · SessionStart     → build_session_context(): the full card bodies, ONCE per
-    session. They do not change mid-session, so paying for them per-prompt was
-    N copies of an invariant.
-
-Why the split (2026-08-10): the per-prompt block had grown to 15,714 chars and
-Claude Code truncates hook additionalContext above ~15K chars — it persisted the
-block to a file and injected only a 2 KB preview, so ~86% of the routing rules
-silently stopped reaching the model. The byte-budget guard did not catch it
-because the host limit is counted in CHARACTERS, not bytes (21,950 B of Korean
-= 15,714 chars: under the 22,300 B guard, over the host's char limit)."""
+So this hook now carries only what is needed to *make and emit* the verdict —
+the 7 lane values, a digest of each lane, the cascade in one line, the output
+format — plus a pointer to the `routing` skill with explicit read-triggers. The
+cascade detail, the intent-crystallization gate, the five re-routing gates, the
+ANALYZE template and the output-order rules live in skills/routing/SKILL.md,
+loaded on demand instead of paid for on every prompt."""
 import json
 import re
 import sys
@@ -27,12 +26,13 @@ from pathlib import Path
 
 CARDS_DIR = Path(__file__).resolve().parent.parent / "cards"
 
-# Per-lane digest cap for the per-turn block. The routing decision needs "what
-# work belongs here + precedence"; the rest of a card body is post-entry
-# guidance that rides the SessionStart block instead. 480 is what it takes for
-# the fat governance/work cards to still carry their route-here rule — 320 left
-# omp/omc as bare labels.
-LANE_DIGEST_CAP = 480
+# Per-lane digest cap. The routing decision needs "what work belongs here +
+# precedence"; the rest of a card body is read from the card itself when the
+# digest does not settle it (the skill says where). 240 is what it takes for the
+# fat governance/work cards to still carry their route-here clause.
+LANE_DIGEST_CAP = 240
+
+SKILL_REF = "oh-my-heroacademia:routing"
 
 
 def _digest(desc: str) -> str:
@@ -43,11 +43,7 @@ def _digest(desc: str) -> str:
     short label ("Project-structure GOVERNANCE lane.") followed by one ~470-char
     sentence carrying the entire route-here rule, so sentence-granular selection
     emitted the label alone and nothing to route on. Prefer a sentence boundary
-    only when one falls in the last 40% of the budget; otherwise cut on a word.
-
-    Deterministic and lossless-by-reference: the full body is still injected
-    once per session by build_session_context(), so nothing is deleted — only
-    moved out of the per-prompt repetition."""
+    only when one falls in the last 40% of the budget; otherwise cut on a word."""
     desc = desc.strip()
     if len(desc) <= LANE_DIGEST_CAP:
         return desc
@@ -73,26 +69,8 @@ def _read_cards(cards_dir: Path):
             continue
 
 
-def build_session_context(cards_dir: Path) -> str:
-    """SessionStart block: the full lane bodies, injected ONCE per session.
-
-    The per-turn block carries only a digest of each; this is where the rest
-    lives. Invariant for the whole session, so it is paid for once instead of
-    once per prompt."""
-    bodies = [f"### {name}\n{desc.strip()}" for name, _, desc in _read_cards(cards_dir)]
-    if not bodies:
-        return ""
-    return (
-        "<omha-lanes>\n"
-        "레인 상세 (세션 1회 주입 — 매 턴 오는 <omha-routing> 은 이것의 요약본이다).\n"
-        "ROUTE 판정 시 요약만으로 애매하면 여기 본문을 근거로 삼아라.\n\n"
-        + "\n\n".join(bodies)
-        + "\n</omha-lanes>"
-    )
-
-
 def build_routing_context(cards_dir: Path) -> str:
-    """Inject the lane-routing checkpoint.
+    """The per-prompt decision surface.
 
     Cards split into three kinds by their lane_type field:
       · governance (omp — WHERE files belong / does the tree obey its rules)
@@ -102,17 +80,11 @@ def build_routing_context(cards_dir: Path) -> str:
     The cascade is GOVERNANCE-FIRST, then DOMAIN, then work-style (2026-06-05
     design). Governance is an axis ORTHOGONAL to the content domains: the same
     .pptx is omd when you author its content but omp when you ask whether it sits
-    in the right folder. So structure/placement/rule work is judged BEFORE the
-    content domains (else it falls through to handle-directly — the bug this
-    fixes), domains are judged before the work-style lanes (paper work ALWAYS
-    enters oms, document work enters omd), and only when none match do the
-    work-style lanes apply.
-    """
+    in the right folder. The one-line form is here; the reasoning, the tier-2.5
+    intent gate and the re-routing obligations are in the routing skill."""
     governance_lanes, domain_lanes, work_lanes = [], [], []
     verdict_names = []
     for name, lane_type, desc in _read_cards(cards_dir):
-        # Digest, not the full body: the body is invariant for the session and
-        # rides build_session_context() once instead of every prompt.
         line = f"- {name}: {_digest(desc)}"
         if lane_type == "governance":
             governance_lanes.append(line)
@@ -127,170 +99,49 @@ def build_routing_context(cards_dir: Path) -> str:
     verdict_enum = "|".join(verdict_names)
     return (
         "<omha-routing>\n"
-        "ROUTE 는 출력 슬롯이 아니라 *매 턴 새로 내리는 판정*이다. 매 턴 새로 판정하고\n"
-        "매 턴 ROUTE 를 출력한다(레인 변화와 무관 — 하드게이트가 매 턴 ROUTE 를 요구한다).\n"
-        "직전 ROUTE 를 관성으로 복사하지 말고 *이번 요청* 기준으로 처음부터 다시\n"
-        "판정하라. 레인만 정하라 —\n"
-        "레인 안 스킬 콕집기는 해당 plugin 이 한다. 3+ 액션/복수파일/모호한 요청이면\n"
-        "ROUTE 위에 ANALYZE 블록을 더 얹는다('3+ 액션'은 *ANALYZE 를 추가할* 조건이지\n"
-        "*ROUTE 를 낼* 조건이 아니다 — 상세는 아래 ANALYZE-then-ROUTE).\n"
-        "핵심 함정: topic(주제) 연속성 ≠ routing 연속성. 주제가 직전과 같아도(같은 실험·\n"
-        "같은 파일) 이번 요청의 *task type* — 요약/설명 vs 검토·심층분석 vs 작성·생성 vs\n"
-        "설계 — 이 바뀌면 레인이 바뀐다. '주제가 같으니 라우팅도 같겠지'가 그 관성이다.\n"
-        "예: 같은 주제라도 handle-directly(대화로 답)에서 '코드 근거로 깊이 검토·분석'\n"
-        "(작업방식 레인 + 독립 reviewer)로 넘어가면 재판정 대상.\n\n"
-        "■ ROUTE 형식 (이 한 줄을 앞에 둬 잘림 방지 — 상세 규칙은 아래):\n"
-        "값은 다음 7개 중 *정확히 하나*다(둘을 '·'/슬래시로 잇지 말 것):\n"
+        "매 턴 새로 판정하고 매 턴 ROUTE 를 출력한다(레인 변화와 무관). 직전 ROUTE 를\n"
+        "관성으로 복사하지 말고 *이번 요청* 기준으로 처음부터 다시 판정하라. 핵심 함정:\n"
+        "topic(주제) 연속성 ≠ routing 연속성 — 주제가 같아도(같은 실험·같은 파일) 이번\n"
+        "요청의 *task type*(요약/설명 vs 검토·심층분석 vs 작성·생성 vs 설계)이 바뀌면\n"
+        "레인이 바뀐다. 레인만 정하라 — 레인 안 스킬 콕집기는 해당 plugin 이 한다.\n\n"
+        "■ ROUTE 형식 — 값은 다음 7개 중 *정확히 하나*다(둘을 '·'/슬래시로 잇지 말 것):\n"
         f"  {verdict_enum}|handle-directly\n"
-        "형식은 GFM 인용 한 줄(평문·middle-dot 금지):\n"
+        "응답 맨 앞에 GFM 인용 한 줄(평문·middle-dot 금지):\n"
         f"> **ROUTE →** <{verdict_enum}|handle-directly> · <한 줄 근거>\n"
-        "handle-directly = 위임 없이 직접 처리(스킬·에이전트 0). 레인 이름과 같이\n"
-        "쓰지 말 것 — 'omc · handle-directly'는 모순(omc=위임, handle-directly=직접).\n"
-        "단, 결론이 가치·타당성 판단을 settled 로 단정하는 것이고 아래 '설계·타당성 판단\n"
-        "단정 직전' 게이트의 두 조건(비싼 downstream *그리고* 미검증 고리)을 모두 만족하면\n"
-        "handle-directly 가 아니다 — 그 게이트로 재라우팅(논증의 self-approval 회피).\n\n"
-        "아래 레인 설명은 *요약본*이다(끝의 '…' = 잘림). 판정이 애매하면 세션 시작 시\n"
-        "1회 주입된 <omha-lanes> 블록의 해당 레인 본문을 근거로 삼아라.\n\n"
-        "■ 거버넌스 하네스 (WHERE — 파일이 어디 속하나·트리가 규칙 지키나. 산출물 축과 직교):\n"
-        f"{governance_body}\n\n"
-        "■ 도메인 하네스 (WHAT — 만드는 산출물이 정함. 명확하면 *먼저* 여기로):\n"
-        f"{domain_body}\n\n"
-        "■ 작업방식 레인 (HOW — 일하는 방식이 정함):\n"
+        "handle-directly = 위임 없이 직접 처리(스킬·에이전트 0). 레인 이름과 같이 쓰지\n"
+        "말 것 — 'omc · handle-directly'는 모순(omc=위임, handle-directly=직접).\n\n"
+        "■ 레인 (요약 — 카드 description 의 앞부분. '…' = 잘림):\n"
+        "· 거버넌스 (WHERE — 파일이 어디 속하나·트리가 규칙 지키나. 산출물 축과 직교)\n"
+        f"{governance_body}\n"
+        "· 도메인 (WHAT — 만드는 산출물이 정함. 명확하면 *먼저* 여기로)\n"
+        f"{domain_body}\n"
+        "· 작업방식 (HOW — 일하는 방식이 정함)\n"
         f"{work_body}\n\n"
-        "판정 캐스케이드 (거버넌스 → 도메인 → 작업방식, 위에서부터):\n"
-        "· 0순위 — 구조/배치/규칙 문제인가? (파일이 제자리야? 재배치해? 명명·dataset·\n"
-        "  .omp 규칙?) 그렇다면 oh-my-project. 산출물 축과 직교하므로 *가장 먼저* 본다 —\n"
-        "  같은 .pptx라도 '내용을 만들면' omd, '제자리에 있나'면 omp. 구조 작업이\n"
-        "  도메인·작업방식으로 새서 handle-directly 로 떨어지는 것을 막는 단계.\n"
-        "· 1순위 — 산출물 도메인이 명확한가? (논문 .tex/.bib → oh-my-scholar, 문서\n"
-        "  .pptx/.docx → oh-my-docs). 명확하면 무조건 그 도메인 하네스로 진입한다.\n"
-        "  특히 논문 작업은 *반드시* oh-my-scholar 로 — 직접 수행하거나 OMC 병렬로\n"
-        "  때우지 말 것(citation 무결성 가드가 oms 안에만 있다).\n"
-        "· 2순위 — 도메인이 안 잡히면 작업방식 레인(SP/OMC/OMX) 중 적합한 것. 단 사용자\n"
-        "  의중이 미결정이면 여기서 고르기 전에 2.5순위를 먼저 적용하라.\n"
-        "· 2.5순위 — 의중 미결정 게이트. 발동은 교집합 — (i) 사용자도 *무엇을 원하는지\n"
-        "  아직 안 정했는가* ('같이 논의해보자', '뭐가 나을지 모르겠다', 본인도 설명이\n"
-        "  어렵다고 밝힘) *그리고* (ii) 답이 여러 턴짜리 설계 탐색으로 이어지는가. 둘 다면\n"
-        "  handle-directly 가 아니라 의중 구체화로 간다: 선택지 자체를 아직 못 세웠으면\n"
-        "  oh-my-claudecode(deep-interview), 선택지가 이미 둘 이상 나와 있고 그중 방향을\n"
-        "  좁히는 단계면 superpowers(brainstorming) — 괄호 안은 목적지 스킬이고 ROUTE 값은\n"
-        "  레인 이름만 쓴다. 요구된 것은 판정이 아니라 의중 확정이다. 밸브 — 명시적으로\n"
-        "  가볍게(의견만) 요청했거나, 단일 사실 확인이거나, 사소한 취향 판단(변수명·포맷)\n"
-        "  이면 인터뷰로 끌지 말 것(과흡인 금지).\n"
-        "· 3순위 — 위 어느 것도 아님 → handle-directly(직접 수행). 단 handle-directly 는\n"
-        "  *적극적 정의*로만 성립한다 — 단일 사실 lookup, 이미 정해진 것의 요약·설명,\n"
-        "  가벼운 대화 응답, 잠정 의견(목표가 이미 정해진 경우). '아무것도 안 걸렸다'는\n"
-        "  소거법은 근거가 못 된다: 목표 미결정(2.5순위)이거나 여러 턴짜리 설계 탐색이면\n"
-        "  아니다. 답이 '설계가 옳은가/학술·물리적으로 타당한가'를 settled 로 단정하는\n"
-        "  것이면 아래 '설계·타당성 판단 단정 직전' 게이트를 적용하라.\n\n"
-        "재라우팅 의무 (어떤 레인으로 시작했든 — handle-directly 로 답하던 중이라도 —\n"
-        "*행동 직전* 다시 ROUTE 를 찍는 행동-시점 게이트):\n"
-        "· 위임 직전: 본질적으로 작업방식 레인(SP/OMC)인 무거운 하위작업(여러 출처 병렬\n"
-        "  조사·깊은 리서치·왜인지 분석·repo/transcript 정독·test-first 코드)을\n"
-        "  `Agent`/`Task`/`Workflow` 로 위임하기 직전에 멈춰 레인을 재판정하라. raw\n"
-        "  `Agent` 직접 호출로 OMC research 스킬을 우회하지 말 것.\n"
-        "· 산출물 수정 직전: 하네스가 소유한 *산출물 파일*(exp-analyze report.md/.ko.md,\n"
-        "  omd .pptx/.docx, oms .tex/.bib)을 *수정*하는 순간 재판정하라. 그 파일들의\n"
-        "  양식·검증 게이트는 해당 스킬을 *경유할 때만* 발동하므로 Edit/Write 로 직접\n"
-        "  고치면 게이트가 통째로 우회된다 → report.md 는 oh-my-experiments(exp-analyze\n"
-        "  재분석), 문서는 oh-my-docs, 논문은 oh-my-scholar 의 쓰기 경로로 고친다.\n"
-        "· 리서치 위임(사용자 지침): 무거운 문헌 조사·외부 repo/라이브러리 조사·기술 비교\n"
-        "  (best practice, X vs Y, 최신 패턴)는 단발 검색으로 때우지 말고 OMC research 를\n"
-        "  적극 중용 — 외부로 나가는 조사(웹·공식문서·GitHub repo)는\n"
-        "  oh-my-claudecode:external-context(facet 분해→병렬 검색→URL 인용), 주어진 대상의\n"
-        "  깊은 분석(이 코드베이스가 어떻게 동작하나)은 oh-my-claudecode:sciomc.\n"
-        "  외부 repo/플러그인/라이브러리를 *조사·분석·도입판단*하는 작업은 액션 수와\n"
-        "  무관하게(1액션처럼 보여도) OMC 로 — 다중 파일 외부 산출물이면 실질은 다액션.\n"
-        "  진입점 하나(README/SKILL.md)만 보고 단정 말고 매니페스트(plugin.json 등)와\n"
-        "  전체 트리를 먼저 확인하라.\n"
-        "· 코드 사실 단정 직전: '이 코드가 X 한다/안 한다'를 *단정*하기 직전 멈춰라.\n"
-        "  주석·변수명·docstring 이 X 라 말하는 것은 근거가 아니다(이름 vs 구현 불일치).\n"
-        "  단정 전 `.claude/rules/03` \"Verify Implementation, Not Name\" 을 실제로 이행\n"
-        "  (write-site grep + 레지스트리 대조)한 뒤에만 단정하고, 다파일 추적이면 lookup 이\n"
-        "  아니라 조사이므로 OMC(sciomc/explore)로 위임하라. 주석 한 줄 보고 단정하는 것이\n"
-        "  이 세션이 반복 오답한 그 사고다.\n"
-        "· 설계·타당성 판단 *단정* 직전: '이 설계가 옳다/물리적으로 정당하다/학술적으로\n"
-        "  의미있다/이 접근이 맞다'처럼 *가치·타당성 판단*을 settled 결론으로 단정하기\n"
-        "  (계획·커밋 메시지·스펙에 넣거나 '이거 맞아?'에 확정 yes로) 직전 멈춰라. 이는\n"
-        "  코드 사실 lookup 이 아니라 *논증*이며, 단일 컨텍스트가 스스로 authoring 한 논증을\n"
-        "  스스로 승인하는 것은 self-approval 이다(never self-approve). 발동은 교집합 —\n"
-        "  (i) 결론이 곧바로 되돌리기 비싼 downstream 행동(코드 채택·실험 launch·아키텍처\n"
-        "  변경)을 유발하는가. 단순 설명·비교·현황 요약은 비용 낮음. *그리고* (ii) 이 논증의\n"
-        "  각 고리를 코드/문헌/데이터로 *실제 확인*했는가 — 확인 못 한 고리가 하나라도\n"
-        "  있으면(또는 '확인했나?'에 즉답 못 하면) '미검증 고리 있음'으로 *간주*한다.\n"
-        "  없음을 입증하기 전엔 있다고 본다('내 논증이 탄탄한 느낌'은 (ii)를 끄지 못한다 —\n"
-        "  그 자기맹점이 이 세션이 반복 오답한 지점). 둘 다면 handle-directly 로 답하지 말고\n"
-        "  재라우팅하되, 리뷰어에게 *내 결론*이 아니라 *질문*을 넘겨라(pre-baked answer 를\n"
-        "  주면 critic 이 그 약한 고리에 anchoring 된다): 제어·아키텍처 설계 타당성은\n"
-        "  oh-my-claudecode(구조 분석 sciomc, 적대검토는 team 의 critic/architect role),\n"
-        "  '학술적으로 의미있나'는 citation-bound 이므로 oh-my-scholar(scholar-reviewer/\n"
-        "  researcher — 1순위 캐스케이드와 일치; references/ 논문 열기는 그 lane 안의\n"
-        "  external-context sub-task 로, 기억 추측 금지). *예외(과흡인 밸브)*: 사소한 취향\n"
-        "  판단(변수명·포맷)·단순 사실 확인·사용자가 '가볍게 의견만'이라 한 경우는 직접.\n"
-        "  또한 결론을 settled 로 단정하지 않고 '검증 전 잠정 의견:' 으로 명시해 내놓는 것은\n"
-        "  재라우팅 없이 허용된다(단정할 때만 게이트 발동).\n"
-        "· 예외: 진짜 3-4줄짜리 단일 파일·단일 사실 lookup 은 직접(과흡인 금지). 단\n"
-        "  '코드가 이렇게 *동작한다*'는 주장은 lookup 이 아니다 — 한 줄 값 읽기(상수·\n"
-        "  경로·버전)만 lookup 이고, 데이터 흐름·배선·'관리/호출/적용되는가'는 여러 파일\n"
-        "  추적이 필요한 조사다(위 '코드 사실 단정' 게이트 적용). 여러 파일을 읽거나\n"
-        "  코드 동작을 해석하거나 구조를 파악해야 하면 조사이므로 위임한다.\n"
-        "  citation-bound 논문 자료조사는 OMC 병렬 금지.\n\n"
-        "요구사항 분석 선행(ANALYZE-then-ROUTE): 요청이 3+ 액션/복수파일이거나 모호하면,\n"
-        "ROUTE 줄보다 *먼저* ANALYZE 블록을 출력해 요구사항을 분해하라(잘못 이해해 되돌리는\n"
-        "토큰 낭비 방지). 단순·명확한 1~2액션이면 ANALYZE 생략(과흡인 금지), 곧장 ROUTE 만.\n"
-        "형식 — GFM 인용 블록(blockquote): 각 줄 '> ' 로 시작, 첫 줄 볼드 헤더, 4개 필드는\n"
-        "'> - ' 불릿 + 볼드 라벨(middle-dot '·' 나 평문 들여쓰기 금지 — 그러면 마크다운이\n"
-        "리스트로 인식 못 해 라벨이 뭉친다). 아래를 그대로 따르되 <…> 만 채움:\n"
-        "> **ANALYZE**\n"
-        "> - **목적**: <이 요청으로 달성하려는 것 한 줄>\n"
-        "> - **핵심 요구**: <반드시 만족할 것 — 쉼표로 나열>\n"
-        "> - **제약**: <지켜야 할 한계·보존 범위 / 없으면 '특이사항 없음'>\n"
-        "> - **모호한 점**: <해석이 갈리는 지점 / 없으면 '없음'>\n"
-        "모호한 점이 '없음' 이 아니면 ROUTE·작업으로 넘어가지 말고 그 지점을 먼저\n"
-        "사용자에게 확인하라. 단 모호한 것이 *목표 자체*면 ad-hoc 질문이 아니라 2.5순위\n"
-        "게이트를 적용하라 — 세부는 직접 묻고, 목표 미결정은 하네스로.\n\n"
-        "출력 순서 (ROUTE 는 매 턴 낸다): 응답 맨 처음에, 게이트\n"
-        "해당 시 ANALYZE 블록을 *먼저* 통째로 내고 그 *바로 아래* 줄에 ROUTE — 즉\n"
-        "ANALYZE 가 ROUTE 보다 위. (다른 블록이 'ROUTE 를 맨 앞에' 라고 해도 게이트 해당 시엔 ANALYZE\n"
-        "가 맨 앞 자리를 차지하고 ROUTE 는 그 다음 줄 — 이 순서가 우선한다.) 게이트 비해당\n"
-        "이면 ANALYZE 없이 ROUTE 만 맨 앞 줄에. 레인 변화와 무관하게 매 턴 ROUTE 를\n"
-        "낸다(ANALYZE 는 게이트 해당 시에만 추가 — 요구사항 분해는\n"
-        "출력 노이즈가 아니라 작업 정확도용).\n"
-        "ROUTE 도 ANALYZE 와 같은 GFM 인용 블록(평문·middle-dot 금지). 둘을 같이 낼 때는\n"
-        "ANALYZE 블록 끝에 빈 인용 줄('>') 하나로 띄우고 그 아래 ROUTE 줄을 붙여 하나의\n"
-        "인용 박스로 묶는다(본문과 한눈에 분리). 형식:\n\n"
-        "(게이트 해당 시 — ANALYZE+ROUTE 한 인용 박스; ANALYZE 4개 필드는 위 템플릿대로)\n"
-        "> **ANALYZE**\n"
-        "> ...(위 4개 필드)\n"
-        ">\n"
-        f"> **ROUTE →** <{verdict_enum}|handle-directly> · <한 줄 근거>\n\n"
-        "(게이트 비해당 시 — ROUTE 만)\n"
-        f"> **ROUTE →** <{verdict_enum}|handle-directly> · <한 줄 근거>\n\n"
-        "닫는 재확인(턴 종료 전): ROUTE 를 맨 앞에 찍는 건 *행동 전 commitment 게이트*라\n"
-        "위치를 끝으로 옮기지 않는다 — 대신 본문을 다 쓴 *뒤* 대조하라: 실제로 한 작업이\n"
-        "이번 판정 레인과 같았나? 깊이 생각해보니(또는 본문 도중 무거운 하위작업·산출물\n"
-        "수정으로) 레인이 달라졌다면 그 사실을 한 줄로 명시하고 *갱신된 ROUTE 를 다시\n"
-        "찍어라*. 레인이 안 바뀌었으면 이미 맨 앞에 ROUTE 를 냈으니 추가 출력은 불필요\n"
-        "(중복 금지) — 판정만 조용히 확인하고 넘어간다.\n"
+        "■ 캐스케이드 (위에서부터): 0 구조·배치·규칙 문제면 거버넌스 → 1 산출물 도메인이\n"
+        "명확하면 그 도메인(논문은 *반드시* oh-my-scholar — citation 가드가 거기에만 있다)\n"
+        "→ 2 아니면 작업방식 → 3 아무것도 아니면 handle-directly. handle-directly 는\n"
+        "*적극적 정의*로만 성립한다(단일 사실 lookup, 이미 정해진 것의 요약·설명, 가벼운\n"
+        "대화 응답). '아무것도 안 걸렸다'는 소거법은 근거가 못 된다.\n\n"
+        f"■ 상세 규칙은 `{SKILL_REF}` 스킬 본문에 있다 — 캐스케이드 세부(2.5순위 의중\n"
+        "미결정 게이트), 재라우팅 의무 5종, ANALYZE 템플릿, 출력 순서, 레인 본문 위치.\n"
+        "다음 중 하나라도 해당하면 판정·행동 전에 그 스킬을 *읽어라*:\n"
+        "  · 위 요약만으로 레인이 안 갈린다\n"
+        "  · 3+ 액션·복수파일·모호한 요청 (ANALYZE 블록이 ROUTE 보다 먼저 나가야 한다)\n"
+        "  · Agent/Task/Workflow 위임 직전, 또는 하네스 산출물(exp report.md·omd .pptx·\n"
+        "    oms .tex/.bib) 수정 직전 — 스킬을 경유해야 양식·검증 게이트가 발동한다\n"
+        "  · 코드 사실('이 코드가 X 한다')이나 설계·타당성을 settled 로 단정하기 직전\n"
+        "  · 사용자가 무엇을 원하는지 아직 안 정한 상태(의중 미결정)\n"
         "</omha-routing>"
     )
 
 
 def main() -> int:
     try:
-        stdin_obj = json.loads(sys.stdin.read() or "{}")
-    except Exception:
-        stdin_obj = {}  # no/closed/garbage stdin → behave as UserPromptSubmit
-    event = stdin_obj.get("hook_event_name") or "UserPromptSubmit"
-    try:
-        ctx = (build_session_context(CARDS_DIR) if event == "SessionStart"
-               else build_routing_context(CARDS_DIR))
+        ctx = build_routing_context(CARDS_DIR)
     except Exception:
         return 0  # 카드 못 읽어도 세션 막지 않음 (fail-open)
-    if not ctx:
-        return 0
     print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": event, "additionalContext": ctx}}))
+        "hookEventName": "UserPromptSubmit", "additionalContext": ctx}}))
     return 0
 
 

@@ -19,20 +19,29 @@ The byte-budget guard did not fire because it measured the wrong unit. 21,950 B 
   measurement, not to a guess. Raising it re-opens the silent cut.
 
 ### Changed
-- **Two channels instead of one (`hooks/route_emit.py`, `.claude-plugin/plugin.json`).** The script
-  is now registered for `SessionStart` (`startup|resume|clear|compact`) as well as
-  `UserPromptSubmit`, and branches on `hook_event_name`:
-  - `build_routing_context()` — the decision surface, every prompt: 15,714 → **9,965 chars**.
-  - `build_session_context()` — the full card bodies in an `<omha-lanes>` block, **once** per
-    session (8,695 chars). They are invariant for the session, so paying per-prompt was N copies of
-    a constant.
+- **The hook is a summary + pointer; the manual moved to a skill.** `hooks/route_emit.py` now
+  injects only what is needed to *make and emit* the verdict — the 7 lane values, a 240-char digest
+  per lane, the cascade in one line, the output format — plus a pointer to the new
+  `oh-my-heroacademia:routing` skill carrying explicit read-triggers. **15,714 → 3,118 chars
+  (−80%)**, delivered whole instead of 13% of it. Over a 90-prompt session: 1,414K → 281K chars.
 
-  Nothing is deleted: the per-turn block carries a digest of each lane (`_digest`, cap 480 chars,
-  truncation marked with `…`) and points at `<omha-lanes>` for the rest. Card bodies were 55.4% of
-  the old block — the largest line item, and the only one that is invariant.
+  `skills/routing/SKILL.md` (new) owns the cascade detail including the tier-2.5 intent gate, the
+  five re-routing obligations, the ANALYZE template, and the output-order rules — loaded on demand
+  instead of paid for on every prompt. Lane bodies are **not** copied into it: it points at
+  `cards/*.json`, which stays the single source of truth (a copy there would be the drift the hook's
+  own docstring warns about).
 
-  Measured over a 90-prompt session: 1,414K → 905K characters injected (−36%), and the per-prompt
-  block is delivered whole again instead of 13% of it.
+  The pointer carries *when to read*, not just *what exists* — five triggers (digest does not
+  settle the lane / 3+ actions / before delegating or editing a harness artifact / before asserting
+  a code fact or a design judgment / undecided intent). A pointer without triggers is ignored under
+  momentum, which is the whole failure mode this hook exists to fight.
+
+- **Tests follow the split.** Prose assertions for rules that moved now target `SKILL.md`, and two
+  new guards keep the structure honest: `test_hook_points_at_the_skill_with_read_triggers` (the
+  pointer must name the skill *and* its triggers) and `test_per_turn_block_is_a_summary_not_the_manual`
+  (fails if a full card body reappears in the hook). The per-turn ceiling tightens 12,000 → **4,000
+  chars** — with the detail gone there is no reason for the hook to grow, and slack invites prose
+  back in.
 
 - **`_digest` spends its whole budget.** Sentence-granular selection (drop any sentence that would
   overflow) was tried first and is wrong for these cards: several open with a short label followed
