@@ -32,6 +32,6 @@
   ],
   "triggers": {
     "extensions": [],
-    "skills": ["omp-init", "omp-codify", "omp-style", "omp-organize", "omp-dataset", "omp-env", "omp-doc", "omp-learn", "omp-audit", "omp-log", "omp-brief", "omp-review", "omp-handoff", "omp-pilot", "omp-doctor"]
+    "skills": ["omp-init", "omp-codify", "omp-style", "omp-organize", "omp-dataset", "omp-env", "omp-doc", "omp-learn", "omp-audit", "omp-log", "omp-brief", "omp-review", "omp-handoff", "omp-garden", "omp-pilot", "omp-doctor"]
   }
 }
