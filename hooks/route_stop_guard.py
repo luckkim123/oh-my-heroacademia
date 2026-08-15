@@ -80,7 +80,8 @@ def log_turn(stdin_obj, scan=rg._scan_turn, writer=route_log.record):
         if turn_id is None:
             return None  # no resolvable turn (orphan/subagent transcript)
         prompt = route_log.turn_prompt(transcript, rg._is_real_user_turn)
-        return writer(stdin_obj.get("cwd"), turn_id, window, prompt)
+        return writer(stdin_obj.get("cwd"), turn_id, window, prompt,
+                      session_id=stdin_obj.get("session_id", ""))
     except Exception:
         return None  # a logger must never break the session
 

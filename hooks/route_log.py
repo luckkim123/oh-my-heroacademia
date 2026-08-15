@@ -90,11 +90,19 @@ def log_dir(cwd):
     return d if d.is_dir() else None
 
 
-def build_record(turn_id, window, prompt, now=None):
+def build_record(turn_id, window, prompt, now=None, session_id=""):
+    """One record. `session_id` is the join key to ~/.claude/metrics/usage.jsonl.
+
+    Without it the two logs can still be joined — turn_id IS the transcript
+    record's uuid — but only by scanning every transcript in the project, which
+    is what makes "cost per lane" expensive rather than impossible. Recording it
+    here turns that scan into a dict lookup. Defaults to "" so the field is
+    always present and old readers keep working."""
     lanes = lanes_in(window)
     return {
         "ts": (now or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
         "turn_id": turn_id,
+        "session_id": session_id,
         "lanes": lanes,
         "rerouted": len(lanes) > 1,
         "missing": not lanes,
@@ -103,14 +111,14 @@ def build_record(turn_id, window, prompt, now=None):
     }
 
 
-def record(cwd, turn_id, window, prompt, now=None):
+def record(cwd, turn_id, window, prompt, now=None, session_id=""):
     """Append one record. Returns the path written, or None when off/failed."""
     d = log_dir(cwd)
     if d is None:
         return None
     path = d / "routing.jsonl"
     try:
-        line = json.dumps(build_record(turn_id, window, prompt, now),
+        line = json.dumps(build_record(turn_id, window, prompt, now, session_id),
                           ensure_ascii=False)
         with open(path, "a", encoding="utf-8") as f:
             f.write(line + "\n")

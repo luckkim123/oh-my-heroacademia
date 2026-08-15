@@ -127,6 +127,26 @@ def test_log_turn_records_the_turn_that_skipped_its_route(tmp_path):
     assert rec["missing"] is True
 
 
+def test_log_turn_records_the_session_id(tmp_path):
+    """usage.jsonl 과 이을 조인 키. 없으면 레인별 비용을 내려면 프로젝트의 트랜스크립트를
+    전수 스캔해야 한다 — turn_id 가 트랜스크립트 uuid 라 조인 자체는 되지만 비싸다."""
+    (tmp_path / ".omha").mkdir()
+    t = _transcript(tmp_path, prompt="현황", assistant="> **ROUTE →** oh-my-project · x")
+    rsg.log_turn({"transcript_path": t, "cwd": str(tmp_path), "session_id": "sess-42"})
+    rec = json.loads((tmp_path / ".omha" / "routing.jsonl").read_text().strip())
+    assert rec["session_id"] == "sess-42"
+
+
+def test_session_id_field_is_always_present(tmp_path):
+    """빈 문자열로라도 항상 있어야 한다 — 필드 부재와 미지 세션을 구분하지 못하면
+    집계기가 두 경우를 같은 것으로 센다."""
+    (tmp_path / ".omha").mkdir()
+    t = _transcript(tmp_path, prompt="현황", assistant="> **ROUTE →** handle-directly · x")
+    rsg.log_turn({"transcript_path": t, "cwd": str(tmp_path)})   # session_id 없음
+    rec = json.loads((tmp_path / ".omha" / "routing.jsonl").read_text().strip())
+    assert rec["session_id"] == ""
+
+
 def test_log_turn_never_raises(tmp_path):
     """로거는 어떤 입력에도 세션을 깨뜨리면 안 된다 (fail-open)."""
     assert rsg.log_turn({}) is None
