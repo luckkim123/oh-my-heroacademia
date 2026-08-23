@@ -284,8 +284,13 @@ def test_run_allows_when_route_appears_on_retry(tmp_path):
     assert len(sleeps) == 1                    # slept exactly once (between scan 1 and 2)
 
 
-def test_run_denies_after_full_retry_still_no_route(tmp_path):
-    """All 3 scans still show no ROUTE (genuine skip) -> deny, scan 3x, sleep 2x."""
+def test_run_denies_once_a_stable_window_shows_no_route(tmp_path):
+    """A NON-EMPTY window that stopped growing is a genuine skip -> deny early.
+
+    The writer has demonstrably caught up (it wrote text for this turn and then
+    stopped), so spending the rest of the flush-race budget only adds latency to
+    a call that is going to be denied anyway.
+    """
     calls = []
     sleeps = []
 
@@ -298,8 +303,84 @@ def test_run_denies_after_full_retry_still_no_route(tmp_path):
                        scan=scan, sleep=lambda s: sleeps.append(s))
     assert code == 0
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert len(calls) == 3                     # retried the full budget before deny
-    assert len(sleeps) == 2                    # slept between each of the 3 scans
+    assert len(calls) == 2                     # first scan + one confirming re-scan
+    assert len(sleeps) == 1
+
+
+def test_run_waits_out_the_budget_while_the_transcript_is_empty(tmp_path):
+    """An empty window is not evidence — the tool call proves a message exists.
+
+    So an empty transcript means the writer is behind, and that is exactly the
+    case the wait exists for. Deny only after the whole budget.
+    """
+    calls = []
+    sleeps = []
+
+    def scan(_transcript):
+        calls.append(1)
+        return ("", "u1")
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=scan, sleep=lambda s: sleeps.append(s))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert len(calls) == rg._RETRY_ATTEMPTS + 1     # cheap first scan + the budget
+    assert len(sleeps) == rg._RETRY_ATTEMPTS
+
+
+def test_run_keeps_waiting_while_the_window_is_still_growing(tmp_path):
+    """A growing window means the writer is mid-flush — conclude nothing yet.
+
+    This is the false deny the old 0.30s budget produced: measured on one live
+    session 2026-08-23, 7 of 9 denials had a ROUTE in the window when _scan_turn
+    was replayed against the transcript afterwards.
+    """
+    calls = []
+    sleeps = []
+    # Text arrives in pieces; the ROUTE only lands on the 5th scan — past the old
+    # 3-scan budget, which denied turns that had in fact declared their route.
+    chunks = [
+        "",
+        "생",
+        "생각을 정",
+        "생각을 정리하면",
+        "생각을 정리하면\n> **ROUTE →** oh-my-claudecode · x",
+    ]
+
+    def scan(_transcript):
+        calls.append(1)
+        return (chunks[min(len(calls) - 1, len(chunks) - 1)], "u1")
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=scan, sleep=lambda s: sleeps.append(s))
+    assert code == 0 and out is None, "a ROUTE that lands late must still allow"
+    assert len(calls) == 5
+
+
+def test_cross_session_records_are_not_turn_boundaries():
+    """A peer's message is not the user asking for anything.
+
+    Claude Code delivers it as type=user with string content, structurally
+    identical to a typed prompt. Treating it as a boundary discards the ROUTE
+    already emitted for the real prompt — measured as the cause of one live
+    denial (boundary "[Cross-session delivery notice] ...", window 111 chars).
+    """
+    for text in ("[Cross-session delivery notice] Your message to another session was held",
+                 'Another Claude session sent a message: <cross-session-message from="uds:...">'):
+        rec = {"type": "user", "uuid": "u1", "message": {"role": "user", "content": text}}
+        assert not rg._is_real_user_turn(rec), text[:40]
+
+
+def test_local_command_records_stay_turn_boundaries():
+    """The carve-out is narrow on purpose: a pre-compact ROUTE must NOT carry over.
+
+    One denial in the same session had `/compact` as its boundary and an empty
+    window — that one was correct, and must stay correct.
+    """
+    for text in ("/compact", "<local-command-caveat>Caveat: ...", "실제로 타이핑한 요청"):
+        rec = {"type": "user", "uuid": "u1", "message": {"role": "user", "content": text}}
+        assert rg._is_real_user_turn(rec), text[:40]
 
 
 def test_run_first_scan_route_no_sleep(tmp_path):

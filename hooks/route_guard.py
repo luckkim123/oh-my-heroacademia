@@ -23,6 +23,42 @@ def has_route_line(text):
     return bool(_ROUTE_RE.search(text))
 
 
+# Injected user-role records that are NOT the user asking for anything. Claude
+# Code delivers a peer session's message, and the notice that one was delivered,
+# as type=user with string content — structurally identical to a typed prompt.
+# Measured on this vault 2026-08-23: of 1,171 user-role records, 125 were these.
+# Treating one as a turn boundary discards the ROUTE the model already emitted
+# for the real prompt, so every later tool call in that turn is denied over a
+# routing declaration that exists. Confirmed as the cause of one denial in a
+# live session (boundary "[Cross-session delivery notice] …", window 111 chars
+# with no ROUTE, while the turn's actual ROUTE sat just outside it).
+#
+# Narrow on purpose. `/compact` and other local-command records stay boundaries:
+# a pre-compact ROUTE must NOT satisfy the gate afterwards, and one denial in
+# the same session (window 0 chars right after /compact) was correct. These two
+# prefixes are the only user-role records carrying no user request at all, so
+# excluding them cannot be used to skip a routing decision — a peer session can
+# report work, never ask for it.
+#
+# The price, stated plainly because it is real: the window grows. Replaying the
+# same session after this change, turns that had been chopped into fragments by
+# peer traffic re-merged into one 15,254-char window, and a single ROUTE at the
+# top covers all of it. That is the correct semantics — routing is decided per
+# USER request, and no user request happened in between — but it does mean a
+# long peer-heavy turn is gated by one declaration. If a peer ever needs to
+# force a re-route, the fix is for the model to emit a fresh ROUTE, not for the
+# transport to fake a turn boundary.
+_SYNTHETIC_USER_PREFIXES = (
+    "[Cross-session delivery notice]",
+    "Another Claude session sent a message",
+)
+
+
+def _is_synthetic_user_record(content):
+    """True for a user-role record that is an injected notice, not a prompt."""
+    return isinstance(content, str) and content.startswith(_SYNTHETIC_USER_PREFIXES)
+
+
 def _is_real_user_turn(rec):
     """A genuine user message (the turn boundary) — NOT a tool_result line.
 
@@ -45,6 +81,8 @@ def _is_real_user_turn(rec):
     if "toolUseResult" in rec:
         return False
     content = rec.get("message", {}).get("content")
+    if _is_synthetic_user_record(content):
+        return False
     if isinstance(content, str):
         return bool(content)
     if not isinstance(content, list) or not content:
@@ -153,6 +191,16 @@ def _sentinel_write(session_id, turn_id):
         pass
 
 
+# Flush-race budget. A real-work tool can fire before the assistant's ROUTE text
+# reaches the transcript JSONL, and 3 x 0.15s (0.30s) was not enough. Measured
+# 2026-08-23 by replaying _scan_turn against a live session's transcript at each
+# of its 9 denials: 7 had a ROUTE in the window after the fact — the declaration
+# was real, the hook simply read the file before it landed. A denied call costs a
+# full model round trip, so trading up to ~1.2s of hook latency for it is heavily
+# positive, and the loop rarely spends it (see run()).
+_RETRY_ATTEMPTS = 8
+_RETRY_INTERVAL = 0.15
+
 _DENY_REASON = (
     "This turn has no ROUTE line. Per the omha cascade, re-judge this request from "
     "scratch and emit a fresh `> **ROUTE →** <lane> · <reason>` line FIRST — topic "
@@ -168,8 +216,15 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
     Flush-race tolerant: a real-work tool can fire before the assistant's ROUTE text
     is flushed to the transcript JSONL, so a single scan may miss a ROUTE the model
     actually emitted -> false deny. When the first (cheap, no-sleep) scan shows no
-    ROUTE, re-scan up to 3 times (sleep 0.15s between attempts, ≤0.30s total) before
-    concluding the turn truly has no ROUTE line.
+    ROUTE, re-scan up to _RETRY_ATTEMPTS times (_RETRY_INTERVAL apart, ≤1.2s total)
+    before concluding the turn truly has no ROUTE line.
+
+    The budget is rarely spent. The loop stops the moment a ROUTE appears, and also
+    the moment a NON-EMPTY window stops growing — the writer has caught up, so the
+    turn genuinely has no ROUTE and further waiting buys nothing. Only a transcript
+    still empty for this turn runs to the cap, and that is exactly the case where
+    the wait is warranted: the tool call itself proves an assistant message exists,
+    so an empty window means the writer is behind, not that the model said nothing.
 
     Latency guard: the fire-once sentinel short-circuit is checked BEFORE the
     retry-sleep loop, so on a turn already gated by an earlier tool call every
@@ -193,11 +248,19 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
             return 0, None
         # Retry only when the first scan missed the ROUTE (possible flush lag).
         if not has_route_line(window):
-            attempts = 3
-            for _ in range(1, attempts):
-                sleep(0.15)
+            for _ in range(_RETRY_ATTEMPTS):
+                prev_len = len(window)
+                sleep(_RETRY_INTERVAL)
                 window, _ = scan(transcript)
                 if has_route_line(window):
+                    break
+                # Exit early once the writer has demonstrably caught up: a
+                # NON-EMPTY window that stopped growing is a genuine negative,
+                # so spending the rest of the budget only adds latency. An empty
+                # window is not evidence of anything — the tool call proves an
+                # assistant message exists, so an empty transcript means the
+                # writer is still behind and the wait is the whole point.
+                if window and len(window) == prev_len:
                     break
         # Mark this turn as gated so subsequent tool calls in it are not re-checked.
         # ponytail: this fires even when THIS call ends up denied (write happens
