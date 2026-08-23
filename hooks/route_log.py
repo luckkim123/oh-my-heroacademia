@@ -90,7 +90,49 @@ def log_dir(cwd):
     return d if d.is_dir() else None
 
 
-def build_record(turn_id, window, prompt, now=None, session_id=""):
+# route_guard's PreToolUse matcher, verbatim. The flag exists to say whether the
+# gate was WATCHING this turn, so any drift between the two makes `missing` count
+# turns nothing ever enforced. Keep these in sync with .claude-plugin/plugin.json.
+REAL_WORK_TOOLS = {"Bash", "Agent", "Task", "Edit", "Write"}
+
+
+def turn_used_real_work(transcript_path, is_real_user_turn):
+    """True iff this turn called a tool route_guard gates.
+
+    Since 0.9.0 a ROUTE line is required only on such turns, so a tool-less turn
+    with no lane is correct rather than a miss. Without this the two are the same
+    record and the miss rate reads roughly double.
+
+    Its own walk rather than route_guard's `_scan_turn`, which returns text only —
+    and deliberately so: the gate must not grow a dependency on the logger."""
+    try:
+        with open(transcript_path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError:
+        return False
+    for ln in reversed(lines):
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            rec = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        if is_real_user_turn(rec):
+            return False  # turn boundary reached with no gated tool seen
+        if rec.get("type") != "assistant":
+            continue
+        content = rec.get("message", {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "tool_use" \
+                    and b.get("name") in REAL_WORK_TOOLS:
+                return True
+    return False
+
+
+def build_record(turn_id, window, prompt, now=None, session_id="", work=False):
     """One record. `session_id` is the join key to ~/.claude/metrics/usage.jsonl.
 
     Without it the two logs can still be joined — turn_id IS the transcript
@@ -106,19 +148,20 @@ def build_record(turn_id, window, prompt, now=None, session_id=""):
         "lanes": lanes,
         "rerouted": len(lanes) > 1,
         "missing": not lanes,
+        "work": bool(work),
         "analyze": "ANALYZE" in (window or ""),
         "prompt": prompt,
     }
 
 
-def record(cwd, turn_id, window, prompt, now=None, session_id=""):
+def record(cwd, turn_id, window, prompt, now=None, session_id="", work=False):
     """Append one record. Returns the path written, or None when off/failed."""
     d = log_dir(cwd)
     if d is None:
         return None
     path = d / "routing.jsonl"
     try:
-        line = json.dumps(build_record(turn_id, window, prompt, now, session_id),
+        line = json.dumps(build_record(turn_id, window, prompt, now, session_id, work),
                           ensure_ascii=False)
         with open(path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
@@ -158,9 +201,15 @@ def summarize(records):
     for r in records:
         for lane in r.get("lanes", []):
             lanes[lane] = lanes.get(lane, 0) + 1
+    # Records written before 0.9.0 carry no `work` field. They were logged under
+    # the every-turn rule, so their `missing` was genuine — defaulting them to
+    # False would erase the whole pre-0.9.0 miss history.
+    work = [r for r in records if r.get("work", True)]
     return {
         "turns": len(records),
         "missing": sum(1 for r in records if r.get("missing")),
+        "work_turns": len(work),
+        "missing_on_work": sum(1 for r in work if r.get("missing")),
         "rerouted": sum(1 for r in records if r.get("rerouted")),
         "analyze": sum(1 for r in records if r.get("analyze")),
         "lanes": dict(sorted(lanes.items(), key=lambda kv: -kv[1])),
@@ -176,12 +225,13 @@ def _cli(argv):
         return 1
     s = summarize(records)
     print(f"{path}  —  {s['turns']} turns")
-    print(f"  ROUTE 누락 {s['missing']}  재라우팅 {s['rerouted']}  ANALYZE {s['analyze']}")
+    print(f"  ROUTE 누락 {s['missing']} (실작업 턴 {s['work_turns']}개 중 {s['missing_on_work']})"
+          f"  재라우팅 {s['rerouted']}  ANALYZE {s['analyze']}")
     for lane, n in s["lanes"].items():
         print(f"    {lane:22s} {n:4d}  {n / s['turns'] * 100:5.1f}%")
-    missed = [r for r in records if r.get("missing")]
+    missed = [r for r in records if r.get("missing") and r.get("work", True)]
     if missed:
-        print("  ROUTE 누락 턴 (앞 5개):")
+        print("  ROUTE 누락 턴 — 실작업 턴만 (앞 5개):")
         for r in missed[:5]:
             print(f"    · {r.get('prompt', '')[:70]}")
     return 0

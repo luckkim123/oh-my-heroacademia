@@ -1,77 +1,43 @@
 #!/usr/bin/env python3
-"""Stop backstop hook: force a ROUTE line on a pure-chat turn that skipped it.
+"""Stop hook: append this turn's routing verdict to `.omha/routing.jsonl`.
 
-route_guard.py gates real-work tool calls, but a turn that calls NO tool (pure
-chat / self-reflection) can still skip its ROUTE line. This Stop hook catches that:
-on a missing ROUTE it emits a top-level {decision:block} so the model must declare
-a ROUTE before stopping. Fire-once via the shared sentinel prevents a stop-loop.
+This module used to be a blocking backstop. It caught a pure-chat turn — one that
+called no tool, so route_guard (PreToolUse) never fired — that had skipped its
+ROUTE line, and emitted `{decision: block}` to force the model to declare one
+before stopping.
 
-See tests/test_route_stop_guard.py. Reuses route_guard internals — no duplication.
-Stdlib only; fails open on every error.
+That gate is retired as of 0.9.0. Measured on this vault (25 transcripts, 206
+turns): 111 turns (53.9%) called no gated tool. Those are exactly the turns where
+a wrong lane costs nothing — no file is written, no agent is dispatched — and the
+block's price is a full response regeneration. Enforcement now lives entirely in
+route_guard, which fires the instant real work begins; a turn that drifts from
+chat into work is caught at its first tool call, which is the moment that matters.
+
+What remains is the logger, which still runs on every Stop event. It is kept HERE
+rather than moved because Stop is the only event that sees a finished turn — the
+lanes declared, whether the turn re-routed mid-flight, and (since 0.9.0) whether
+the turn did real work at all, which is what makes `missing` interpretable.
+
+See tests/test_route_stop_guard.py. Stdlib only; fails open on every error.
 """
 import json
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import route_guard as rg
 import route_log
 
-_STOP_REASON = (
-    "You finished this turn without emitting a ROUTE line. Emit "
-    "`> **ROUTE →** handle-directly · <reason>` (or the correct lane) before stopping."
-)
-
-
-def run(stdin_obj, sentinel_read=rg._sentinel_read, sentinel_write=rg._sentinel_write,
-        scan=rg._scan_turn, sleep=time.sleep):
-    """Returns (exit_code, stdout_dict_or_None). Fails open on any error.
-
-    Flush-race tolerant: the Stop hook can fire before the assistant's text block is
-    flushed to the transcript JSONL, so a single scan may miss a ROUTE line the model
-    actually emitted. Re-scan up to 3 times (sleep 0.15s between attempts, ≤0.30s
-    total) before concluding the turn truly has no ROUTE line.
-    """
-    try:
-        transcript = stdin_obj.get("transcript_path")
-        if not transcript:
-            return 0, None
-        session_id = stdin_obj.get("session_id", "")
-        turn_id = None
-        attempts = 3
-        for i in range(attempts):
-            window, scanned_turn_id = scan(transcript)
-            if i == 0:
-                # Turn boundary is fixed within a turn; pin it from the first scan.
-                turn_id = scanned_turn_id
-            if rg.has_route_line(window):
-                return 0, None  # ROUTE present (possibly after flush) — allow
-            if i < attempts - 1:
-                sleep(0.15)
-        # All attempts exhausted with no ROUTE line.
-        if turn_id is None:
-            # No resolvable turn boundary (orphan/incomplete transcript, or a
-            # subagent's own sub-transcript with no real user line). There is no
-            # genuine turn to demand a ROUTE for, and _sentinel_matches_turn's
-            # `turn_id is not None` guard means a None turn_id can NEVER be
-            # satisfied by writing a None sentinel -- blocking here would fire
-            # every Stop event forever. Allow the stop instead.
-            return 0, None
-        if rg._sentinel_matches_turn(sentinel_read(session_id), turn_id):
-            return 0, None  # already gated this turn — never loop the stop
-        sentinel_write(session_id, turn_id)
-        return 0, {"decision": "block", "reason": _STOP_REASON}
-    except Exception:
-        return 0, None
-
 
 def log_turn(stdin_obj, scan=rg._scan_turn, writer=route_log.record):
     """Append this turn's verdict to `.omha/routing.jsonl` (no-op when off).
 
-    Runs independently of the gate decision — a turn that SKIPPED its ROUTE line
-    is the most interesting record in the file, so it must be logged too. Its own
-    scan rather than run()'s, so a logging change can never perturb the gate."""
+    A turn that skipped its ROUTE line is still the most interesting record in
+    the file, so it is logged too — paired with `work`, which says whether the
+    silence was correct (a chat turn) or a genuine miss (a work turn).
+
+    Uses its own scan rather than sharing one with the gate, so a logging change
+    can never perturb route_guard's decision."""
     try:
         transcript = stdin_obj.get("transcript_path")
         if not transcript:
@@ -80,8 +46,9 @@ def log_turn(stdin_obj, scan=rg._scan_turn, writer=route_log.record):
         if turn_id is None:
             return None  # no resolvable turn (orphan/subagent transcript)
         prompt = route_log.turn_prompt(transcript, rg._is_real_user_turn)
+        work = route_log.turn_used_real_work(transcript, rg._is_real_user_turn)
         return writer(stdin_obj.get("cwd"), turn_id, window, prompt,
-                      session_id=stdin_obj.get("session_id", ""))
+                      session_id=stdin_obj.get("session_id", ""), work=work)
     except Exception:
         return None  # a logger must never break the session
 
@@ -91,11 +58,8 @@ def main():
         stdin_obj = json.load(sys.stdin)
     except Exception:
         return 0
-    code, out = run(stdin_obj)
     log_turn(stdin_obj)
-    if out is not None:
-        print(json.dumps(out))
-    return code
+    return 0
 
 
 if __name__ == "__main__":

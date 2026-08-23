@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.9.0 — 2026-08-23
+ROUTE 선언이 매 턴 응답 맨 위를 차지했다. 같은 레인이 연속돼도 반복되는 것은 설계된 동작이었지만
+— 판정을 매 턴 다시 하게 만드는 유일한 증거이자 `routing.jsonl` 의 입력 — 사람이 읽는 화면에서는
+소음이다.
+
+선언을 화면 밖으로 옮기는 길은 없다. 트랜스크립트의 thinking 블록은 본문이 **비어서** 저장되고
+(실측: 최근 40개 트랜스크립트의 thinking 938개 전부 빈 문자열, `redacted_thinking` 0건),
+HTML 주석은 터미널 렌더러가 감추지 않으며, 툴을 안 쓰는 순수 대화 턴에는 모델→훅 채널이 가시
+텍스트뿐이다. 가시성과 검증은 같은 것이다.
+
+바꿀 수 있는 건 *어느 턴이 선언을 요구받느냐* 였다.
+
+### Changed
+- **ROUTE 는 이제 실작업 턴에만 출력한다.** 판정은 여전히 매 턴 돌지만, 줄은 이 턴이
+  `Bash·Edit·Write·Agent·Task` 중 하나를 쓸 때만 찍는다. 대화로 시작해 작업으로 넘어가면 첫
+  도구 호출 시점에 찍으면 되고, PreToolUse 게이트가 정확히 거기서 요구한다.
+
+  실측(한 vault, 트랜스크립트 25개 / 206턴): **111턴(53.9%)이 게이트 대상 도구를 하나도 안 썼다.**
+  그 턴들은 파일도 안 건드리고 에이전트도 안 띄우므로 레인이 틀려도 잃을 게 없다. 실작업 턴 95개의
+  레인 분포는 superpowers 43.2% · handle-directly 33.7% · 선언없음 13.7% · omc 8.4%.
+
+### Removed
+- **Stop 백스톱의 차단 동작** (`hooks/route_stop_guard.py`). 순수 대화 턴에서 ROUTE 누락을 잡아
+  `{decision: block}` 으로 응답 전체를 재작성시키던 게이트다. 요구 자체가 사라졌으니 게이트도 같이
+  간다. 모듈은 남는다 — `log_turn` 이 계속 `.omha/routing.jsonl` 에 기록한다. Stop 은 끝난 턴을
+  보는 유일한 이벤트라 로거는 여기 있어야 한다. 102 → 66줄.
+
+  부수 효과: `emoji_guard`(claudebase) 가 재작성을 시킨 턴이 ROUTE 누락으로 또 차단되던 연쇄가
+  대화 턴에서는 끊긴다.
+
+### Added
+- **`routing.jsonl` 레코드에 `work` 필드** (`hooks/route_log.py`). 이게 없으면 대화 턴의 *정상적인*
+  무선언이 전부 `missing` 으로 집계돼 누락률이 두 배 가까이 부풀고 지표가 죽는다. `summarize()` 가
+  `work_turns` 와 `missing_on_work` 를 같이 내고, CLI 도 실작업 턴 기준으로 보고한다.
+  `work` 필드가 없는 0.9.0 이전 레코드는 `True` 로 취급한다 — 그때는 매 턴 규칙이었으므로 그
+  `missing` 은 진짜였고, `False` 로 놓으면 이전 누락 이력이 통째로 지워진다.
+- `route_log.REAL_WORK_TOOLS` — route_guard 의 PreToolUse matcher 사본. 둘이 어긋나면 `work` 가
+  게이트가 보지도 않은 턴을 세게 되므로 `.claude-plugin/plugin.json` 과 함께 동기 유지가 필요하다.
+
+### Notes
+- **커버리지 경계**: `Read`·`Grep`·`Glob`·MCP 도구만 쓰는 턴은 route_guard 의 matcher 밖이라
+  이제 아무 게이트도 안 걸린다. 의도된 것이다 — 읽기는 아무것도 안 바꾸고, 읽은 뒤 실제로 손대는
+  순간 게이트가 잡는다.
+- 표시는 omc HUD 의 `route:` 세그먼트가 맡는다 (claudebase `runtime/hud/omha-route.mjs`).
+  `.omha/routing.jsonl` 이 아니라 트랜스크립트를 직접 tail-스캔한다 — statusline stdin 에
+  `transcript_path` 가 실려 오므로 1턴 지연도, `.omha/` opt-in 의존도 없다.
+- 주입 크기 3,118 → 3,338자 (호스트 상한은 **문자** 단위다 — 0.8.5 참조).
+
 ## 0.8.5 — 2026-08-10
 The routing block had been silently truncated since the 08-10 card sync: at 15,714 characters it
 crossed Claude Code's inline limit for hook `additionalContext`, so the host persisted it to a file

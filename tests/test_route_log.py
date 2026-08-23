@@ -180,10 +180,16 @@ def test_cli_reports_and_exits_nonzero_when_empty(tmp_path, capsys):
     assert "oh-my-project" in capsys.readouterr().out
 
 
-def test_stop_gate_is_unaffected_by_a_failing_logger(tmp_path, monkeypatch):
-    """로깅이 터져도 Stop 게이트 결정은 그대로여야 한다."""
+def test_a_failing_logger_never_breaks_the_stop_event(tmp_path, monkeypatch):
+    """로깅이 터져도 세션은 정상 종료돼야 한다.
+
+    0.9.0 이전에는 이 테스트가 '로거가 터져도 Stop 게이트 결정은 그대로'였다.
+    게이트가 route_guard(PreToolUse)로 일원화되면서 지킬 불변식이 하나 줄었다 —
+    이제 남은 건 '로거는 절대 세션을 막지 않는다' 뿐이다."""
+    import io
     monkeypatch.setattr(route_log, "record", lambda *a, **k: (_ for _ in ()).throw(RuntimeError))
     t = _transcript(tmp_path, prompt="p", assistant="ROUTE: handle-directly")
-    code, out = rsg.run({"transcript_path": t, "session_id": "s"})
-    assert (code, out) == (0, None)          # ROUTE 있으므로 통과
-    assert rsg.log_turn({"transcript_path": t, "cwd": str(tmp_path)}) is None
+    monkeypatch.setattr(rsg.sys, "stdin",
+                        io.StringIO(json.dumps({"transcript_path": t, "session_id": "s",
+                                                "cwd": str(tmp_path)})))
+    assert rsg.main() == 0

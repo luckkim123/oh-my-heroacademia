@@ -313,3 +313,32 @@ def test_digest_keeps_whole_sentences_and_marks_truncation():
     assert len(d) <= route_emit.LANE_DIGEST_CAP + 2    # '…' 여유
     assert d.startswith("First sentence here.")
     assert d.endswith("…")
+
+
+# ─── work-turn scoping (0.9.0) ────────────────────────────────────────────────
+
+def test_instruction_scopes_emission_to_work_turns():
+    """선언은 실작업 턴에만. 순수 대화 턴 111/206(53.9%)에서 줄이 사라지는 근거."""
+    ctx = route_emit.build_routing_context(route_emit.CARDS_DIR)
+    assert "실작업 턴에만" in ctx
+    assert "매 턴 ROUTE 를 출력한다" not in ctx      # 옛 규칙이 남으면 아무것도 안 바뀐다
+
+
+def test_instruction_still_demands_judgment_every_turn():
+    """출력만 좁혔지 판정은 좁히지 않았다 — 관성 복사는 여전히 금지."""
+    ctx = route_emit.build_routing_context(route_emit.CARDS_DIR)
+    assert "매 턴 새로 판정하라" in ctx
+    assert "관성" in ctx
+
+
+def test_instruction_names_the_gated_tools_route_guard_actually_watches():
+    """모델이 '작업 턴'을 게이트와 다르게 이해하면 첫 도구 호출에서 차단당한다."""
+    ctx = route_emit.build_routing_context(route_emit.CARDS_DIR)
+    for tool in ("Bash", "Edit", "Write", "Agent", "Task"):
+        assert tool in ctx
+
+
+def test_instruction_covers_the_chat_to_work_transition():
+    """대화로 시작해 작업으로 넘어가는 턴이 이 설계의 유일한 회색지대다."""
+    ctx = route_emit.build_routing_context(route_emit.CARDS_DIR)
+    assert "첫 도구 호출" in ctx

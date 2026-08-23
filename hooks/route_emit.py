@@ -18,7 +18,14 @@ the 7 lane values, a digest of each lane, the cascade in one line, the output
 format — plus a pointer to the `routing` skill with explicit read-triggers. The
 cascade detail, the intent-crystallization gate, the five re-routing gates, the
 ANALYZE template and the output-order rules live in skills/routing/SKILL.md,
-loaded on demand instead of paid for on every prompt."""
+loaded on demand instead of paid for on every prompt.
+
+Emission is scoped to work turns (0.9.0). The judgment still runs every turn, but
+the ROUTE line is only *printed* when the turn calls a tool route_guard gates.
+Measured on one vault (25 transcripts, 206 turns), 111 turns (53.9%) called no
+such tool: they touch nothing, so a wrong lane there costs nothing, and the line
+was pure noise on the reader's screen. The Stop backstop that used to force a
+line on those turns is retired with it — see hooks/route_stop_guard.py."""
 import json
 import re
 import sys
@@ -99,11 +106,16 @@ def build_routing_context(cards_dir: Path) -> str:
     verdict_enum = "|".join(verdict_names)
     return (
         "<omha-routing>\n"
-        "매 턴 새로 판정하고 매 턴 ROUTE 를 출력한다(레인 변화와 무관). 직전 ROUTE 를\n"
-        "관성으로 복사하지 말고 *이번 요청* 기준으로 처음부터 다시 판정하라. 핵심 함정:\n"
-        "topic(주제) 연속성 ≠ routing 연속성 — 주제가 같아도(같은 실험·같은 파일) 이번\n"
-        "요청의 *task type*(요약/설명 vs 검토·심층분석 vs 작성·생성 vs 설계)이 바뀌면\n"
-        "레인이 바뀐다. 레인만 정하라 — 레인 안 스킬 콕집기는 해당 plugin 이 한다.\n\n"
+        "매 턴 새로 판정하라. 직전 ROUTE 를 관성으로 복사하지 말고 *이번 요청* 기준으로\n"
+        "처음부터 다시 판정하라. 핵심 함정: topic(주제) 연속성 ≠ routing 연속성 — 주제가\n"
+        "같아도(같은 실험·같은 파일) 이번 요청의 *task type*(요약/설명 vs 검토·심층분석 vs\n"
+        "작성·생성 vs 설계)이 바뀌면 레인이 바뀐다. 레인만 정하라 — 레인 안 스킬 콕집기는\n"
+        "해당 plugin 이 한다.\n\n"
+        "■ 언제 출력하나 — *실작업 턴에만*. 이 턴에 Bash·Edit·Write·Agent·Task 중 하나라도\n"
+        "쓴다면 그 첫 도구 호출 *전에* ROUTE 를 찍어라. 순수 대화·설명·요약 턴이면 판정만\n"
+        "하고 줄은 찍지 마라 — 사람이 읽는 화면의 소음이고, 아무것도 안 건드리는 턴이라\n"
+        "레인이 틀려도 잃을 게 없다. 대화로 시작해 작업으로 넘어가면 도구를 집는 그 시점에\n"
+        "찍으면 된다(PreToolUse 게이트가 정확히 거기서 요구한다).\n\n"
         "■ ROUTE 형식 — 값은 다음 7개 중 *정확히 하나*다(둘을 '·'/슬래시로 잇지 말 것):\n"
         f"  {verdict_enum}|handle-directly\n"
         "응답 맨 앞에 GFM 인용 한 줄(평문·middle-dot 금지):\n"
