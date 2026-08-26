@@ -1,6 +1,8 @@
 {
   "name": "heroacademia",
-  "owner": { "name": "kimseungmin" },
+  "owner": {
+    "name": "kimseungmin"
+  },
   "description": "kimseungmin's personal harness marketplace — own-code plugins (oh-my-docs, ...). SP/OMC stay on their remote marketplaces.",
   "plugins": [
     {
@@ -39,6 +41,14 @@
         "repo": "luckkim123/oh-my-experiments"
       },
       "description": "Experiment-analysis & design harness for RL/ML research — analyze training runs, diagnose regressions, design the next experiment, and run a semi-autonomous analyze-design-eval loop over .omx/ state"
+    },
+    {
+      "name": "oh-my-orchestrator",
+      "source": {
+        "source": "github",
+        "repo": "luckkim123/oh-my-orchestrator"
+      },
+      "description": "Multi-vendor orchestration harness — the Claude session executes, vendor CLIs advise by role. Campaigns run on a tracked .orchestration/ board with enforcement on SubagentStop. Execution layer, not a routing lane."
     }
   ]
 }
