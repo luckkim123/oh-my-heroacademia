@@ -33,8 +33,10 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
-DENYLIST_REL_PATH = os.path.join(".omha", "redact-patterns.txt")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import omha_paths
 
 _GH_PR_RE = re.compile(r"\bgh\s+pr\s+(create|edit)\b")
 
@@ -45,7 +47,7 @@ def load_patterns(cwd):
     """Read `.omha/redact-patterns.txt` under cwd -> list of literal lowercase
     patterns (comments/blanks stripped). Missing/unreadable file -> []
     (silent allow) — the caller treats an empty list as nothing to check."""
-    path = os.path.join(cwd, DENYLIST_REL_PATH)
+    path = omha_paths.redact_patterns_txt(cwd)
     try:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()

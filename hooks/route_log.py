@@ -20,8 +20,12 @@ Stdlib only. Every failure is swallowed: a logger must never break a session.
 """
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import omha_paths
 
 # `> **ROUTE →** oh-my-project · reason` / `ROUTE: handle-directly` / `ROUTE -> omc`
 _LANE_RE = re.compile(r"ROUTE\s*(?:->|→|:)\**\s*([a-z][a-z0-9-]*)")
@@ -84,7 +88,7 @@ def log_dir(cwd):
     if not cwd:
         return None
     try:
-        d = Path(cwd) / ".omha"
+        d = omha_paths.root(cwd)
     except (TypeError, ValueError):
         return None
     return d if d.is_dir() else None
@@ -218,7 +222,7 @@ def summarize(records):
 
 def _cli(argv):
     root = argv[1] if len(argv) > 1 else "."
-    path = Path(root) / ".omha" / "routing.jsonl" if not str(root).endswith(".jsonl") else Path(root)
+    path = omha_paths.routing_jsonl(root) if not str(root).endswith(".jsonl") else Path(root)
     records = load(path)
     if not records:
         print(f"no routing records at {path}")
