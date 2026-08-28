@@ -1,5 +1,123 @@
 # Changelog
 
+## 0.10.0 — 2026-08-28
+store-spec §7 stage 2 — fallback 제거. `hooks/omha_paths.py`의 읽기 헬퍼가 그동안
+`new if new.exists() else legacy`로 파일 존재 여부를 봤는데, 이제는 앵커 유무만 본다:
+`.hq/.anchor`가 파싱 가능하면 읽기·쓰기 모두 `.hq/`로, 없으면 여전히 `.omha/`로 — 개별
+파일이 실제로 복사됐는지는 더 이상 검사하지 않는다. 쓰기 헬퍼가 갖고 있던 중간 분기
+("앵커는 있지만 이 파일이 아직 안 복사됐으면 레거시로")는 stage 1이 보호하던 창이었고,
+stage 2는 그 창을 닫는다고 선언한 것이다. `_read`/`_write` 둘 다 결국 같은 식
+`new if has_anchor(base) else legacy`을 계산하고 있었으므로 `_resolve(base, new, legacy)`
+하나로 합쳤다.
+
+`route_log.py`의 opt-in-by-directory 계약(로깅 on/off는 앵커가 아니라 런타임 디렉터리
+존재로 결정)은 이 릴리스에서 손대지 않았다 — HUB 결정 D21(2026-08-28)로 이미 확정·측정된
+동작이라 fallback 제거 범위 밖.
+
+`.gitignore`: 이 저장소 자신의 레거시 스토어 줄(`.omha/redact-patterns.txt`)을 제거했다
+— `**/.hq/runtime/`가 흡수한다(store-spec §9.4). `git check-ignore -v` 전후 대조 결과
+실제로 새로 tracked 되는 파일은 없었다 — 이 저장소의 `.omha/`에는 이미 tracked인
+`redact-patterns.example.txt`만 있고, 실사용 파일(`redact-patterns.txt`)은 디스크 어디에도
+없었다.
+
+### Changed
+- `hooks/omha_paths.py`: `_read`/`_write` → `_resolve(base, new, legacy)`로 병합.
+  `redact_patterns_txt`·`routing_jsonl` 모두 이걸 통해 재계산. `gate_state()`의 `legacy`
+  행 독스트링을 "warn, read via fallback"에서 "warn: 이 프로젝트는 미이주 레거시 스토어를
+  갖고 있고 `.hq/`에서는 읽히지 않는다"로 정정 — 이 상태에서 더 이상 fallback은 없다.
+- 모듈 독스트링을 stage 1(P4, write-new/read-both) 서술에서 stage 2 서술로 재작성.
+
+### Fixed
+- pyproject.toml이 0.9.1에 멈춰 있었던 걸 발견 — CHANGELOG는 이미 0.9.2 항목을 갖고
+  있었는데(docs-only 커밋 c0809ad) 버전 파일 동기화가 빠져 있었다. 별도 정정 커밋 대신
+  이번 릴리스의 점프(0.9.1 → 0.10.0)에 접어 넣기로 했고, 이 판단은 리뷰에서 확인됐다 —
+  누락된 0.9.2 범프는 이렇게 기록으로 남기고, off-by-one 오류처럼 보이게 두지 않는다.
+
+### Cards — injected routing-prose sweep
+omha는 라우팅 하네스라 매 턴 주입되는 텍스트가 세션 전체에 미친다. 서브에이전트는 훅은
+물려받아도 CLAUDE.md는 물려받지 않으므로, 카드 텍스트가 서브에이전트가 실제로 따르는
+유일한 안내다. 스토어를 곧 purge할 예정이라, 카드가 다른 하네스의 레거시 경로를 이름으로
+갖고 있으면 존재하지 않는 디렉터리를 조용히 가리키게 된다. `hooks/route_emit.py`(실제
+주입기)와 `cards/*.json` 6개 전부를 훑었다 — `oms`/`omd`/`omc`/`superpowers` 카드는
+레거시 경로 언급이 없었다.
+
+바뀐 것 (경로는 `~/claudebase/runtime/bin/migrate-om-store.sh`의 `rules_for()` 매핑을
+그대로 따름):
+- `cards/omp.json` — description 3곳 + example 1곳: `.omp/env/` → `.hq/config/project/env/`
+  (`dir|env|config/project/env`), `.omp/ SSOT` → `.hq/ SSOT`, `.omp/secretary/` →
+  `.hq/config/project/secretary/` (`dir|secretary|config/project/secretary`),
+  `The .omp/ index-coherence` → `The .hq/ index-coherence`.
+- `cards/omx.json` — description 2곳 + example 1곳: `` `.omx/programs/<id>/PLAN.md` `` →
+  `` `.hq/community/programs/<id>/PLAN.md` `` (`dir|programs|community/programs`),
+  `.omx/profile analyzer` → `.hq/config/experiments/profile/ analyzer`
+  (`dir|profile|config/experiments/profile`).
+
+의도적으로 남긴 것 (경로 지시가 아니라 마크커 사용이라 판단):
+- `cards/omp.json`의 `tags` 배열 안 bare `.omp` 항목, 그리고 example
+  `"이 프로젝트 폴더 스캔해서 .omp 초기화해줘 (init)"` — 둘 다 슬래시·하위경로가 없는
+  bare mnemonic이라 특정 디렉터리를 가리키지 않는다(트리거 키워드/사용자 발화 예시).
+- `skills/routing/SKILL.md:25`의 `.omp 규칙?` — 같은 이유.
+- `skills/routing/SKILL.md:142`의 "찾는 순서는 `.hq/runtime/routing/` → 구 `.omha/`" —
+  route_log의 opt-in-by-directory 메커니즘을 정확히 서술하는 문장이라 "미이주 레거시
+  스토어에 관한 서술" 예외에 해당(D21, 손대지 않음).
+
+**실제 주입 char delta: 0.** `route_emit.py`의 `_digest()`는 레인당 240자에서 자르는데,
+수정한 문자열은 둘 다 잘리는 지점(omp 239자, omx 232자) 훨씬 뒤(전체 설명문 700자대
+이후)에 있다 — 오늘 시점엔 세션 프롬프트에 주입된 적이 애초에 없었다. `cross_lane_emit.py`는
+`description`/`tags`/`examples`를 아예 안 읽는다(트리거의 `extensions`/`skills`만). 그래도
+소스 콘텐츠 자체는 고쳤다 — description 앞부분이 조금만 짧아져도 digest 경계가 이 문자열
+쪽으로 옮겨올 수 있는 우연한 컷오프라서.
+
+### Audited — attribute-shaped legacy roots (widened sweep)
+oh-my-experiments 쪽에서 `compact_breadcrumb()`가 `paths.omx_dir`(레거시 경로로 굳은
+속성)를 직접 glob해 getter를 안 거치는 결함을 찾았다는 보고를 받고, 같은 모양이
+이 저장소에도 있는지 별도로 훑었다. 인용부호 문자열 grep으로는 이 모양(속성/상수를
+통한 우회)이 안 잡혀서 별도 검사가 필요했다.
+
+`grep -rn "legacy_root\|LEGACY_ROOT\|omha_dir" hooks/ scripts/ src/` 전체 결과와 판정:
+- `hooks/omha_paths.py:49` `LEGACY_ROOT = ".omha"` — 단일 선언 지점 그 자체. (b) 정당.
+- `hooks/omha_paths.py:64` `root()` 함수 정의(`Path(base) / LEGACY_ROOT`) — 이 저장소엔
+  `omha_dir` 같은 bare 속성이 아예 없다: 레거시 루트는 항상 `root(base)` **함수 호출**을
+  통해서만 얻어진다. (b) 정당.
+
+`root(` 호출 전체(정의 제외 4곳) 각각의 판정:
+- `omha_paths.py:141` `has_legacy_store()` = `root(base).is_dir()` — (b) 정당한 레거시
+  감지 그 자체(게이트의 `legacy`/`has_legacy_store` 판정용).
+- `omha_paths.py:192`, `:199` `redact_patterns_txt()`/`routing_jsonl()`이 `_resolve()`에
+  넘기는 `legacy` 인자 — (a) 읽기/쓰기 경로, 이미 `_resolve()`를 통해 정상 해석됨(이번
+  릴리스에서 고친 부분).
+- `route_log.py:101` `log_dir()`의 `legacy = omha_paths.root(cwd)` — **`routing_jsonl()`을
+  안 거치지만 하드코딩된 속성도 아니다.** `omha_paths.root()`/`omha_paths.runtime_dir()`
+  라는 정식 getter *함수*를 그대로 호출하고 있고, `_resolve()`를 안 쓰는 건 의도된 것 —
+  옵트인 여부는 앵커가 아니라 "그 디렉터리가 이미 존재하는가"로 결정해야 하기 때문에
+  (opt-in-by-directory, D21), 앵커 기반 `_resolve()`를 쓰면 이 계약 자체가 깨진다.
+  결론: **resolution bug 아님.** oh-my-experiments의 `paths.omx_dir` 결함과 모양이 다르다
+  — 거긴 getter를 아예 거치지 않는 하드코딩 속성이었고, 여긴 getter 함수를 거치되 다른
+  (하지만 올바른) 결정 규칙을 쓴다. (b) 정당 — 손대지 않음.
+- redact-patterns 경로도 동일하게 확인: `redact_guard.py:50`이 부르는 곳은
+  `omha_paths.redact_patterns_txt(cwd)` 단 한 곳뿐이고, 이건 이미 `_resolve()`를 거친다.
+  우회 경로 없음.
+
+`scripts/`(check_tag_drift.py, lane_drift_check.py)와 `src/omha/registry.py`는 legacy
+루트를 전혀 참조하지 않는다 — 유일한 `.glob(`은 `cards/*.json`을 도는 것으로 스토어와
+무관. `breadcrumb`/`compact`/`clean`/`gc`/`prune`류 훅도 이 저장소엔 없다(`route_guard.py`
+매치는 Claude Code의 `/compact` 커맨드 관련 주석일 뿐).
+
+**결론: 이 저장소엔 omx류 attribute-shaped 결함이 없다.** 레거시 루트로 가는 모든 경로가
+`root()` 함수 하나로 수렴하고, 그 4개 호출 지점은 전부 (a) 이미 `_resolve()`로 해석되거나
+(b) 의도된 레거시 감지/옵트인 메커니즘이다.
+
+### Tests
+- `tests/test_omha_store_cutover.py`: `_write` 참조를 `_resolve`로 갱신. stage 1의
+  middle-branch 가정을 검증하던 테스트(anchored-but-not-copied-yet)를 stage 2에서는
+  거짓이 된 주장이라 제거하고, 정반대 결과를 직접 검증하는 신규 테스트로 교체했다:
+  (a) 앵커 있음 + 레거시 파일만 존재 → `.hq/` 경로 반환, (b) 앵커 없음 + 레거시 파일
+  존재 → 레거시 경로 반환.
+- `tests/test_card_triggers.py`, `tests/test_cross_lane_emit.py`의 "legacy" 언급은
+  스토어와 무관한 픽스처 이름(카드 fixture data)임을 확인 — 변경 없음.
+- `tests/test_omha_paths_lint.py` 그대로 통과 — docstring 안의 `.omha`/`.hq` 언급은
+  lint 예외(첫 statement인 docstring Constant는 스캔 대상에서 빠진다).
+
 ## 0.9.2 — 2026-08-28
 라우팅 판정 로그의 경로 서술이 낡아 있었다. 실제 코드는
 `.hq/runtime/routing/` → 구 `.omha/` 순으로 찾는데(`route_log.log_dir`),

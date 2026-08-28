@@ -1,19 +1,23 @@
-"""P4 cutover acceptance — the four-state gate, new-path resolution, write
-gating, and (omha's own wrinkle) the opt-in-by-directory contract that must
-survive the `.hq` migration unchanged.
+"""P4/P7 cutover acceptance — the four-state gate, anchor-only resolution
+(store-spec §7 stage 2), and (omha's own wrinkle) the opt-in-by-directory
+contract that must survive the `.hq` migration unchanged.
 
-Mirrors oh-my-project's tests/test_omp_store_cutover.py (P3). Four gate-state
+Mirrors oh-my-project's tests/test_omp_store_cutover.py. Four gate-state
 fixtures rather than a collapsed "migrated or not" because a three-state
 design sends "legacy store present, no anchor" — the most dangerous state of
 the migration — into the same quiet branch as "not an omha project at all".
-`_write`'s middle branch (anchored, but this artifact not copied yet) gets
-its own case for the same reason: a test that only checks "anchored writes
-new, unanchored writes legacy" cannot see it.
+
+Stage 2 replaced the existence-checking `_read`/`_write` pair with a single
+`_resolve(base, new, legacy)`: `has_anchor(base)` alone decides, in both
+directions, regardless of whether either path actually exists on disk. The
+stage-1 middle branch this file used to test — an anchored project staying
+on legacy until its files were copied — is gone; the tests below assert the
+opposite of that now, directly.
 
 The opt-in-by-directory block is omha-specific: `route_log.log_dir()` is
 deliberately NOT anchor-gated (see omha_paths' module docstring), so its four
 cases are checked directly against `route_log.log_dir`, not against
-`omha_paths._write`.
+`omha_paths._resolve`.
 """
 import sys
 from pathlib import Path
@@ -81,7 +85,7 @@ def test_gate_corrupt_beats_legacy(tmp_path):
     assert omha_paths.gate_state(tmp_path) == omha_paths.GATE_CORRUPT
 
 
-# --- read resolution: new path when migrated, legacy when not ---------------
+# --- getter-level resolution: anchor present -> new, absent -> legacy -------
 
 def test_every_helper_resolves_to_the_new_store_when_migrated(tmp_path):
     _seed_migrated(tmp_path)
@@ -90,63 +94,58 @@ def test_every_helper_resolves_to_the_new_store_when_migrated(tmp_path):
     assert omha_paths.routing_jsonl(tmp_path) == rt / "routing.jsonl"
 
 
-def test_every_helper_falls_back_when_only_the_legacy_store_exists(tmp_path):
+def test_every_helper_resolves_to_legacy_when_unanchored(tmp_path):
     _seed_legacy(tmp_path)
     legacy = tmp_path / ".omha"
     assert omha_paths.redact_patterns_txt(tmp_path) == legacy / "redact-patterns.txt"
     assert omha_paths.routing_jsonl(tmp_path) == legacy / "routing.jsonl"
 
 
-def test_fallback_is_per_file_not_per_directory(tmp_path):
-    """A machine that pulled the anchor commit has the redact denylist copied
-    into `.hq/runtime/routing/` but not yet the routing log — each file
-    resolves on its own, not as a pair."""
-    _seed_anchor(tmp_path)
-    rt = tmp_path / ".hq" / "runtime" / "routing"
-    rt.mkdir(parents=True)
-    (rt / "redact-patterns.txt").write_text("new-pattern\n", encoding="utf-8")
-    (tmp_path / ".omha").mkdir(parents=True)
-    (tmp_path / ".omha" / "routing.jsonl").write_text('{"turn_id":"legacy"}\n',
-                                                       encoding="utf-8")
-    assert omha_paths.redact_patterns_txt(tmp_path) == rt / "redact-patterns.txt"
-    assert omha_paths.routing_jsonl(tmp_path) == tmp_path / ".omha" / "routing.jsonl"
+# --- _resolve directly: no existence check in either direction --------------
 
-
-# --- write gating: the anchor decides, and a half-migrated root stays put ----
-
-def test_write_goes_legacy_without_an_anchor(tmp_path):
+def test_resolve_goes_legacy_without_an_anchor(tmp_path):
     _seed_legacy(tmp_path)
     new = tmp_path / ".hq" / "runtime" / "routing" / "routing.jsonl"
     legacy = tmp_path / ".omha" / "routing.jsonl"
-    assert omha_paths._write(tmp_path, new, legacy) == legacy
+    assert omha_paths._resolve(tmp_path, new, legacy) == legacy
 
 
-def test_write_goes_new_when_migrated(tmp_path):
+def test_resolve_goes_new_when_migrated(tmp_path):
     _seed_migrated(tmp_path)
     new = tmp_path / ".hq" / "runtime" / "routing" / "routing.jsonl"
     legacy = tmp_path / ".omha" / "routing.jsonl"
-    assert omha_paths._write(tmp_path, new, legacy) == new
+    assert omha_paths._resolve(tmp_path, new, legacy) == new
 
 
-def test_write_stays_legacy_while_anchored_but_not_yet_copied(tmp_path):
-    """The pilot's own window — the middle branch of `_write`. Seeding the
-    anchor is step 0 and copying the files is step 2; a write landing in the
-    new store in between would be invisible to every reader, which still
-    resolves to the populated old one."""
-    _seed_legacy(tmp_path)
-    legacy = tmp_path / ".omha" / "routing.jsonl"
-    _seed_anchor(tmp_path)
-    new = tmp_path / ".hq" / "runtime" / "routing" / "routing.jsonl"
-    assert omha_paths._write(tmp_path, new, legacy) == legacy
-
-
-def test_write_goes_new_for_a_project_anchored_from_scratch(tmp_path):
+def test_resolve_goes_new_for_a_project_anchored_from_scratch(tmp_path):
     """Neither path holds the artifact and there is no legacy store to
-    orphan — this is the only case where the new path wins by default."""
+    orphan — the anchor alone is still sufficient."""
     _seed_anchor(tmp_path)
     new = tmp_path / ".hq" / "runtime" / "routing" / "routing.jsonl"
     legacy = tmp_path / ".omha" / "routing.jsonl"
-    assert omha_paths._write(tmp_path, new, legacy) == new
+    assert omha_paths._resolve(tmp_path, new, legacy) == new
+
+
+def test_resolve_returns_new_for_anchored_project_with_only_legacy_file(tmp_path):
+    """Stage 2's whole point, inverted from what stage 1 asserted: an
+    anchored project resolves to `.hq/` even when only the legacy file
+    exists on disk and the new path has nothing copied to it yet. Stage 1
+    kept this case on legacy (the anchored-but-not-yet-copied window);
+    stage 2 declares that window closed."""
+    _seed_legacy(tmp_path)
+    _seed_anchor(tmp_path)
+    new = tmp_path / ".hq" / "runtime" / "routing" / "routing.jsonl"
+    legacy = tmp_path / ".omha" / "routing.jsonl"
+    assert omha_paths._resolve(tmp_path, new, legacy) == new
+
+
+def test_resolve_returns_legacy_for_unanchored_project_with_legacy_file(tmp_path):
+    """The unanchored mirror of the case above: no anchor at all means
+    legacy, regardless of what exists on disk."""
+    _seed_legacy(tmp_path)
+    new = tmp_path / ".hq" / "runtime" / "routing" / "routing.jsonl"
+    legacy = tmp_path / ".omha" / "routing.jsonl"
+    assert omha_paths._resolve(tmp_path, new, legacy) == legacy
 
 
 # --- opt-in by directory: omha's own wrinkle, unchanged by the cutover ------

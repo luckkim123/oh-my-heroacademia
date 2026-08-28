@@ -10,18 +10,21 @@ Reference: ~/oh-my-orchestrator/skills/harness/references/store-spec.md
   §3 the four layers · §6 the four-state gate · §7 fallback · §9.3 omha's
   per-file layer assignment · §9.5 the six declaration sites.
 
-P4 (2026-08-28) switches this module from "legacy only" to the cutover shape,
-mirroring oh-my-project's P3 (`omp_paths.py`). The same three rules govern
-every helper below:
+P4 (2026-08-28) switched this module from "legacy only" to the cutover shape
+(write new, read both). This release is store-spec §7 stage 2 — fallback
+removal — and drops the read side's existence check. Two rules govern every
+helper below now, not three:
 
-**1. The anchor is the switch for writes, not the release.** A write goes to
-`.hq/` when — and only when — the project root carries a parseable
-`.hq/.anchor`. Without one it goes to `.omha/`, exactly where it went before.
+**1. The anchor is the switch, for reads and writes alike.** A project with a
+parseable `.hq/.anchor` resolves every getter below to `.hq/`, unconditionally
+— not "if the new path happens to exist yet". A project without one resolves
+to `.omha/`, exactly where it always went. There is no third case: the
+stage-1 existence-based fallback (new path checked first, legacy as a
+per-file backstop) is gone, and so is the write-side's middle branch that
+protected an anchored-but-not-yet-copied window — stage 2 declares that
+window closed.
 
-**2. Reads resolve per file, new first, legacy second.** Not per directory:
-existence of the specific new path is the only test.
-
-**3. The layer is per file** (§3). omha's two artifacts split across two
+**2. The layer is per file** (§3). omha's two artifacts split across two
 layers: `redact-patterns.txt` -> `runtime/routing/` (a personal string, rule
 ①), `routing.jsonl` -> `runtime/routing/` (a machine-local log, rule ⑤). Both
 land in the same directory here, unlike omp's fan-out across four.
@@ -33,9 +36,9 @@ runtime directory* exists — `.hq/runtime/routing/` or, pre-migration,
 `.omha/` — never merely because an anchor is present. An anchored root with
 neither directory created yet is *off*, exactly like an un-anchored root with
 no `.omha/`. `route_log.log_dir()` checks `runtime_dir()`/`root()` directly
-for this reason, rather than routing through the generic `_write` gate below:
-`_write` treats a valid anchor as sufficient to prefer the new path, and that
-is exactly the behavior this contract forbids.
+for this reason, rather than routing through the generic `_resolve` gate
+below: `_resolve` treats a valid anchor as sufficient to prefer the new path,
+and that is exactly the behavior this contract forbids.
 """
 from __future__ import annotations
 
@@ -154,7 +157,8 @@ def gate_state(base: Path) -> str:
     marker.
 
     off      no legacy store, no anchor   — not an omha project; hooks exit 0
-    legacy   legacy store, no anchor      — warn, read via fallback
+    legacy   legacy store, no anchor      — warn: this project has an
+             unmigrated legacy store and reads will not find it in `.hq/`
     normal   anchor present and parseable
     corrupt  anchor present, unparseable  — loud, never silent
     """
@@ -168,37 +172,28 @@ def gate_state(base: Path) -> str:
     return GATE_LEGACY if has_legacy_store(base) else GATE_OFF
 
 
-# --- resolution: read new-then-legacy, write anchor-gated -------------------
+# --- resolution: the anchor decides, for reads and writes alike ------------
 
-def _read(new: Path, legacy: Path) -> Path:
-    """Rule 2. Existence of the specific new path is the whole test."""
-    return new if new.exists() else legacy
-
-
-def _write(base: Path, new: Path, legacy: Path) -> Path:
-    """Rule 1. The anchor, not the release, decides — and an anchored root
-    whose files have not been copied yet keeps writing where the content
-    still is (the middle branch: anchored, new path still empty, legacy
-    still populated -> legacy)."""
-    if not has_anchor(base):
-        return legacy
-    if new.exists():
-        return new
-    return legacy if legacy.exists() else new
+def _resolve(base: Path, new: Path, legacy: Path) -> Path:
+    """Rule 1, stage 2. `has_anchor(base)` is the whole test — not whether
+    `new` or `legacy` happens to exist. An anchored project resolves to
+    `.hq/` even before anything has been copied there; an unanchored one
+    resolves to `.omha/`, unconditionally."""
+    return new if has_anchor(base) else legacy
 
 
 # --- runtime/routing/ layer --------------------------------------------------
 
 def redact_patterns_txt(base: Path) -> Path:
-    """`redact-patterns.txt` — read-resolving. User-maintained and gitignored
-    in both stores; nothing in this repo writes it, so there is no write
-    form."""
-    return _read(runtime_dir(base) / "redact-patterns.txt",
-                 root(base) / "redact-patterns.txt")
+    """`redact-patterns.txt` — anchor-resolving. User-maintained and
+    gitignored in both stores; nothing in this repo writes it, so there is
+    no separate write form."""
+    return _resolve(base, runtime_dir(base) / "redact-patterns.txt",
+                     root(base) / "redact-patterns.txt")
 
 
 def routing_jsonl(base: Path) -> Path:
-    """`routing.jsonl` — read-resolving, for readers (`route_log._cli`).
+    """`routing.jsonl` — anchor-resolving, for readers (`route_log._cli`).
     Writers use `route_log.log_dir()` instead — see the opt-in-by-directory
     note in this module's docstring; the write path is never anchor-gated."""
-    return _read(runtime_dir(base) / "routing.jsonl", root(base) / "routing.jsonl")
+    return _resolve(base, runtime_dir(base) / "routing.jsonl", root(base) / "routing.jsonl")
