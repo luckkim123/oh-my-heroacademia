@@ -4,3 +4,9 @@ __pycache__/
 .pytest_cache/
 .omc/
 .omha/redact-patterns.txt
+
+# .hq unified store: work/ is regenerable output, runtime/ is session state,
+# locks, logs, and anything sensitive. community/ and config/ stay tracked
+# (store-spec §3, §5). The `**/` prefix is required because anchors nest.
+**/.hq/work/
+**/.hq/runtime/

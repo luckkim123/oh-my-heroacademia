@@ -80,7 +80,15 @@ def turn_prompt(transcript_path, is_real_user_turn):
 
 
 def log_dir(cwd):
-    """The `.omha/` directory for this session, or None when logging is off.
+    """The routing-log directory for this session, or None when logging is
+    off — `.hq/runtime/routing/` if that exists, else legacy `.omha/` if
+    that exists, else off.
+
+    Opt-in by directory, unchanged by the `.hq` cutover: an anchor alone must
+    NOT turn logging on (see omha_paths' module docstring) — only a
+    directory a session or `mkdir` already created does. The new path is
+    tried first, per the module's read-resolution rule; `has_anchor` is never
+    consulted here.
 
     No `os.getcwd()` fallback on purpose. A hook's process cwd is not the
     session's cwd, and guessing wrote a log into the plugin's own repo during
@@ -88,10 +96,13 @@ def log_dir(cwd):
     if not cwd:
         return None
     try:
-        d = omha_paths.root(cwd)
+        new = omha_paths.runtime_dir(cwd)
+        legacy = omha_paths.root(cwd)
     except (TypeError, ValueError):
         return None
-    return d if d.is_dir() else None
+    if new.is_dir():
+        return new
+    return legacy if legacy.is_dir() else None
 
 
 # route_guard's PreToolUse matcher, verbatim. The flag exists to say whether the

@@ -1,100 +1,153 @@
-"""Re-entry lint: fail the build if a `.omha` root-literal string is declared
-anywhere in this repo's .py files outside hooks/omha_paths.py.
+"""Re-entry lint: fails the build if a new root-literal string constant — for
+EITHER store, the legacy `.omha` or the unified `.hq` — lands anywhere outside
+hooks/omha_paths.py (the single declaration point, spec
+~/oh-my-orchestrator/skills/harness/references/store-spec.md §9.5).
 
-Judgment rule (~/oh-my-orchestrator/skills/harness/references/store-spec.md
-§9.5): parse each target file with `ast`. A violation is any `ast.Constant`
-str (including each literal piece of an f-string's `ast.JoinedStr`) that
-contains the root literal `.omha` AND contains no whitespace character —
-paths never have whitespace, prose always does. Module/FunctionDef/
-AsyncFunctionDef/ClassDef docstrings (the first statement, `Expr(Constant(str))`)
-are excluded explicitly, since the module/function-level prose above every
-`.omha` call site in this repo intentionally names the path for humans.
-Comments never reach the AST, so they need no special handling.
+P4 widened this from one literal to two, mirroring oh-my-project's P3
+widening of its own paths-module lint (tests/test_omp_paths_lint.py).
+Guarding only the legacy root would leave the new root free to spread
+through the hooks during the very refactor that exists to prevent exactly
+that — the cutover is when a root string is most likely to be re-typed, not
+least.
 
-Scope: every tracked .py file in this repo, minus:
-  - tests/**             — fixtures need the literal to build `.omha/` dirs
-                            under tmp_path (measured: 21 occurrences today,
-                            across test_redact_guard.py, test_route_log.py,
-                            test_route_stop_guard.py — all `".omha"` path
-                            fragments, none of them prose).
-  - hooks/omha_paths.py   — the one allowed declaration (LEGACY_ROOT itself).
+Violation rule (ast-based, not regex-on-text): a `str` ast.Constant —
+including one nested inside an f-string's JoinedStr, since ast.walk descends
+into those too — counts as a violation iff it CONTAINS a root literal AND
+contains NO whitespace character at all. Paths never have spaces; prose
+always does, so this is what tells a literal path (`".omha/routing.jsonl"`)
+apart from a sentence that merely mentions one. A module, function,
+async-function, or class docstring (the first statement, when it is a plain
+`Expr(Constant(str))`) is explicitly exempt — that is where the prose
+describing this whole convention necessarily lives.
 
-This repo has neither a `references/` directory (data files copied into user
+Scope: every tracked `.py` file in the repo, minus:
+  - `tests/**` — fixtures legitimately need the literal to build `.omha/`/
+    `.hq/` paths on disk under tmp_path.
+  - `hooks/omha_paths.py` — the one file allowed to declare the literal.
+
+omha has neither a `references/` directory (data files copied into user
 projects, per the shared P2 contract) nor `.phase0-scratch/` (omo-only) —
-both exclusions are inapplicable here and are correctly absent from the list
-above; nothing was silently dropped to make the lint pass.
+both spec exclusions are inapplicable here, same as before P4.
 """
 import ast
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+import omha_paths as op  # noqa: E402
+
+ROOTS = (op.LEGACY_ROOT, op.HQ_ROOT)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PATHS_MODULE = REPO_ROOT / "hooks" / "omha_paths.py"
-ROOT_LITERAL = ".omha"
-
 EXCLUDED_DIRS = {"tests"}
 
 
-def _target_files():
-    for py in REPO_ROOT.rglob("*.py"):
-        rel = py.relative_to(REPO_ROOT)
-        if rel.parts[0] in EXCLUDED_DIRS:
-            continue
-        if py == PATHS_MODULE:
-            continue
-        if ".git" in rel.parts or ".venv" in rel.parts or "__pycache__" in rel.parts:
-            continue
-        yield py
+def _is_violation(value: str) -> bool:
+    return any(r in value for r in ROOTS) and not any(ch.isspace() for ch in value)
 
 
-def _docstring_nodes(tree):
-    """Every `Expr(Constant(str))` node that IS a docstring (first statement
-    of the Module or a Function/AsyncFunction/Class def) — to be skipped."""
-    nodes = set()
-    candidates = [tree] + [
-        n for n in ast.walk(tree)
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-    ]
-    for c in candidates:
-        body = getattr(c, "body", None)
-        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
-                and isinstance(body[0].value.value, str):
-            nodes.add(id(body[0].value))
-    return nodes
-
-
-def _string_constants(tree, skip_ids):
-    """Every str `ast.Constant`, minus docstrings.
-
-    `ast.walk` already recurses into an f-string's `ast.JoinedStr.values`,
-    surfacing each literal piece as its own `ast.Constant` node — no special
-    casing needed to cover f-strings too."""
+def _docstring_constant_ids(tree: ast.AST) -> set:
+    """id() of every Constant node that is a module/function/class docstring —
+    the first statement of the node, when it is a plain `Expr(Constant(str))`."""
+    ids = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if id(node) in skip_ids:
-                continue
-            yield node
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = node.body
+            if (body and isinstance(body[0], ast.Expr)
+                    and isinstance(body[0].value, ast.Constant)
+                    and isinstance(body[0].value.value, str)):
+                ids.add(id(body[0].value))
+    return ids
 
 
-def _is_violation(s: str) -> bool:
-    return ROOT_LITERAL in s and not any(ch.isspace() for ch in s)
+def violations_in_source(source: str, filename: str = "<string>") -> list:
+    """[(lineno, value), ...] — every non-docstring str Constant (f-string
+    pieces included, via ast.walk descending into JoinedStr) that is a
+    violation per `_is_violation`."""
+    tree = ast.parse(source, filename=filename)
+    skip = _docstring_constant_ids(tree)
+    out = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and id(node) not in skip and _is_violation(node.value)):
+            out.append((node.lineno, node.value))
+    return out
 
 
-def find_violations():
-    violations = []
-    for py in _target_files():
-        try:
-            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
-        except SyntaxError:
+def _scanned_files():
+    for path in sorted(REPO_ROOT.rglob("*.py")):
+        if "__pycache__" in path.parts or ".venv" in path.parts or ".git" in path.parts:
             continue
-        skip_ids = _docstring_nodes(tree)
-        for node in _string_constants(tree, skip_ids):
-            if _is_violation(node.value):
-                violations.append((py.relative_to(REPO_ROOT), node.lineno, node.value))
-    return violations
+        rel_parts = path.relative_to(REPO_ROOT).parts
+        if rel_parts[0] in EXCLUDED_DIRS:
+            continue
+        if path == PATHS_MODULE:
+            continue
+        yield path
 
 
-def test_no_reentrant_omha_literal_outside_paths_module():
-    violations = find_violations()
-    assert not violations, "new `.omha` literal(s) outside hooks/omha_paths.py:\n" + "\n".join(
-        f"  {path}:{line}: {value!r}" for path, line, value in violations
+def test_scan_targets_exist():
+    # a vacuous pass (0 files scanned) must not read as "0 violations, all clear"
+    assert list(_scanned_files()), "no .py files found to scan — lint scope is broken"
+
+
+def test_no_root_literal_reentry():
+    offenders = []
+    for path in _scanned_files():
+        rel = path.relative_to(REPO_ROOT)
+        for lineno, value in violations_in_source(path.read_text(encoding="utf-8"), str(rel)):
+            offenders.append(f"{rel}:{lineno}: {value!r}")
+    assert not offenders, (
+        f"new {' or '.join(repr(r) for r in ROOTS)} literal(s) outside "
+        "hooks/omha_paths.py — add a named helper there instead:\n" + "\n".join(offenders)
     )
+
+
+# --- meta-tests: prove the detector itself actually bites -------------------
+
+def test_meta_bare_literal_bites():
+    assert violations_in_source('X = ".omha"\n') == [(1, ".omha")]
+
+
+def test_meta_path_literal_bites():
+    v = violations_in_source('X = ".omha/routing.jsonl"\n')
+    assert len(v) == 1 and v[0][1] == ".omha/routing.jsonl"
+
+
+def test_meta_fstring_piece_bites():
+    v = violations_in_source('name = "x"\nX = f".omha/{name}.jsonl"\n')
+    assert any(".omha/" in val for _, val in v)
+
+
+def test_meta_prose_with_whitespace_is_not_a_violation():
+    v = violations_in_source('X = ".omha/routing.jsonl 은 판정 로그다"\n')
+    assert v == []
+
+
+def test_meta_module_docstring_is_exempt():
+    v = violations_in_source('""".omha/routing.jsonl is the log."""\nX = 1\n')
+    assert v == []
+
+
+def test_meta_function_docstring_is_exempt():
+    v = violations_in_source(
+        'def f():\n    """.omha/redact-patterns.txt holds patterns."""\n    return 1\n')
+    assert v == []
+
+
+def test_meta_hq_literal_bites():
+    v = violations_in_source('X = ".hq/runtime/routing/routing.jsonl"\n')
+    assert len(v) == 1 and v[0][1] == ".hq/runtime/routing/routing.jsonl"
+
+
+def test_meta_hq_prose_with_whitespace_is_not_a_violation():
+    v = violations_in_source('X = "이 앵커는 .hq 루트를 가리킨다"\n')
+    assert v == []
+
+
+def test_meta_non_docstring_string_still_bites():
+    # a bare string statement that is NOT the first statement must not be
+    # mistaken for a docstring
+    v = violations_in_source('def f():\n    x = 1\n    ".omha/state"\n    return x\n')
+    assert v == [(3, ".omha/state")]
