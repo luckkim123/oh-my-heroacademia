@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Append one record per turn to `.omha/routing.jsonl` — what was routed where.
+"""Append one record per turn to `.hq/runtime/routing/routing.jsonl` — what was routed where.
 
 Why this exists: every card edit so far has been argued from an anecdote ("this
 session repeatedly got X wrong"). Anecdotes are how the block grew to 15,714
@@ -7,10 +7,11 @@ chars. A verdict log turns "the card needs another gate" into a question the
 data can answer — which requests get mis-routed, which lanes get re-routed
 mid-turn, whether ANALYZE fires when it should.
 
-Opt-in by directory: writes only when `.omha/` already exists in the session's
-cwd. A plugin hook runs in every repository the operator opens, and silently
-creating a dot-dir in each of them is not something a routing plugin should do.
-`mkdir .omha` turns it on for that project.
+Opt-in by directory: writes only when a logging directory already exists in the
+session's cwd — `.hq/runtime/routing/` first, else the legacy `.omha/`. An anchor
+alone does not turn it on. A plugin hook runs in every repository the operator
+opens, and silently creating a dot-dir in each of them is not something a routing
+plugin should do. `mkdir -p .hq/runtime/routing` turns it on for that project.
 
 Append-only, one line per Stop event. The Stop gate can fire twice on a turn
 that had to be sent back for its ROUTE line, so records are NOT unique per

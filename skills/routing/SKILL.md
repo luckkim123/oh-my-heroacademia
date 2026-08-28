@@ -136,10 +136,12 @@ ROUTE 도 ANALYZE 와 같은 GFM 인용 블록(평문·middle-dot 금지). 둘�
 ANALYZE 블록 끝에 빈 인용 줄('>') 하나로 띄우고 그 아래 ROUTE 줄을 붙여 하나의
 인용 박스로 묶는다(본문과 한눈에 분리).
 
-## 판정 로그 (`.omha/routing.jsonl`)
+## 판정 로그 (`.hq/runtime/routing/routing.jsonl`)
 
-프로젝트 루트에 `.omha/` 가 있으면 Stop 훅이 턴마다 판정을 한 줄씩 적는다
-(`hooks/route_log.py`, 디렉터리 없으면 OFF). 기록: 선택된 레인들(2개 이상 = 턴 도중
+프로젝트 루트에 로깅 **디렉터리**가 있으면 Stop 훅이 턴마다 판정을 한 줄씩 적는다
+(`hooks/route_log.py`, 없으면 OFF). 찾는 순서는 `.hq/runtime/routing/` → 구 `.omha/`
+이고, 앵커(`.hq/.anchor`)만 있고 그 런타임 디렉터리가 없으면 켜지지 않는다 — 로깅은
+앵커가 아니라 디렉터리로 opt-in 한다. 기록: 선택된 레인들(2개 이상 = 턴 도중
 재라우팅), ROUTE 누락 여부, ANALYZE 발동 여부, 프롬프트 앞 160자.
 
 읽기: `python3 <plugin>/hooks/route_log.py <project-root>` — 레인 분포, 누락·재라우팅
