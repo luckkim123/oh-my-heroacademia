@@ -215,9 +215,39 @@ def test_e2e_allow_when_route_present(tmp_path):
 
 def test_declared_lanes_reads_the_value_not_just_the_token():
     assert rg.declared_lanes("> **ROUTE →** oh-my-claudecode · x") == ["oh-my-claudecode"]
-    assert rg.declared_lanes("ROUTE: research\nROUTE -> handle-directly") == \
+    assert rg.declared_lanes("ROUTE: research\nROUTE -> handle-directly\n") == \
         ["research", "handle-directly"]
     assert rg.declared_lanes("no declaration here") == []
+
+
+def test_declared_lanes_ignores_a_route_written_about_in_prose():
+    """A ROUTE inside a sentence is prose ABOUT routing, not a declaration.
+
+    The first version scanned the whole window, so a turn that correctly routed
+    and then mentioned a counter-example had `research` as its LAST extracted
+    value and was denied. Found by adversarial review (codex, 2026-08-29)."""
+    text = ("> **ROUTE →** oh-my-claudecode · implementation work\n"
+            "For comparison, `ROUTE: research` would be invalid here.\n")
+    assert rg.declared_lanes(text) == ["oh-my-claudecode"]
+
+
+def test_declared_lanes_captures_the_whole_token():
+    """`[a-z][a-z0-9-]*` stopped at the first illegal character, so two forms the
+    cards forbid read as legal ones: a joined pair captured its legal first half,
+    and an uppercase value captured nothing at all — which reads as "no
+    declaration" and passes. Capturing the whole token makes both visible."""
+    assert rg.declared_lanes("ROUTE: oh-my-project/oh-my-docs · both\n") == \
+        ["oh-my-project/oh-my-docs"]
+    assert rg.declared_lanes("ROUTE: RESEARCH\n") == ["RESEARCH"]
+    assert rg.declared_lanes("ROUTE: `research`\n") == ["`research`"]
+
+
+def test_declared_lanes_skips_a_half_flushed_trailing_line():
+    """A declaration at the very end of the window may still be being written.
+    `> **ROUTE →** oh-my` is not the lane `oh-my`; it is `oh-my-project` a
+    keystroke early. Not matching it means not judging it — the safe direction."""
+    assert rg.declared_lanes("> **ROUTE →** oh-my") == []
+    assert rg.declared_lanes("> **ROUTE →** oh-my-project · x") == ["oh-my-project"]
 
 
 def test_valid_lanes_comes_from_the_cards():
@@ -254,11 +284,51 @@ def test_e2e_enum_check_has_no_opinion_when_cards_unreadable(tmp_path, monkeypat
     """Fail open, same contract as the rest of the hook: an unreadable card
     directory must never turn this into a gate that denies every lane."""
     monkeypatch.setattr(rg, "valid_lanes", lambda: set())
-    tr = _jsonl([_user_uuid("go", "u1"), _asst_text("ROUTE: research"),
+    tr = _jsonl([_user_uuid("go", "u1"), _asst_text("ROUTE: research · x"),
                  _asst_tool("Bash")], tmp_path)
     code, out = rg.run({"transcript_path": tr, "tool_name": "Bash", "session_id": "s1"},
                        sentinel_read=lambda s: None, sentinel_write=lambda s, t: None)
     assert code == 0 and out is None
+
+
+def test_valid_lanes_has_no_opinion_on_a_partial_card_read(tmp_path, monkeypatch):
+    """One malformed card must not make its own lane illegal.
+
+    `_read_cards` skips an unparseable card and keeps going — deliberate, so a
+    single bad card cannot drop every other card's routing info. But that leaves
+    a set MISSING a legal lane rather than an empty one, so a card that is merely
+    mid-edit would deny a correctly-routed turn. Named by adversarial review
+    (codex, 2026-08-29); the first version's rationale assumed the failure mode
+    was an empty set, and it is not."""
+    import route_emit
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "d", "lane_type": "work"}))
+    (tmp_path / "broken.json").write_text("{ not json")
+    monkeypatch.setattr(route_emit, "CARDS_DIR", tmp_path)
+    # The underlying reader still returns what it could parse ...
+    assert route_emit.lane_values(tmp_path) == {"oh-my-claudecode", "handle-directly"}
+    # ... but the guard refuses to judge on an incomplete read.
+    assert rg.valid_lanes() == set()
+
+
+def test_e2e_enum_deny_does_not_stamp_the_fire_once_sentinel(tmp_path):
+    """A wrong lane must not be cleared by retrying the identical call.
+
+    The no-ROUTE deny stamps the sentinel on purpose (never nag a multi-tool turn
+    twice), and the first version of the enum check inherited that — so a denied
+    call retried unchanged went straight through and the deny bought one round
+    trip of friction and no correction. Named by adversarial review (codex,
+    2026-08-29)."""
+    tr = _jsonl([_user_uuid("go", "u1"), _asst_text("> **ROUTE →** research · x"),
+                 _asst_tool("Bash")], tmp_path)
+    store = {}
+    for _ in range(2):
+        code, out = rg.run({"transcript_path": tr, "tool_name": "Bash", "session_id": "s1"},
+                           sentinel_read=lambda s: store.get(s),
+                           sentinel_write=lambda s, t: store.__setitem__(s, t))
+        assert code == 0
+        assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert store == {}, "the enum deny must leave the turn ungated"
 
 
 def test_e2e_deny_when_no_route(tmp_path):

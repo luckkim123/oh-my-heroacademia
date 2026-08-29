@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.10.2 — 2026-08-29 — the enum gate shipped bypassable and could deny correct turns
+
+0.10.1's enum check was handed to a **different model** (codex, via
+`codeagent-wrapper --agent oracle --backend codex`) with instructions to attack it
+rather than approve it. It named four failure modes. Three are real and fixed here;
+the fourth is wrong, and saying which is which is the point of writing this down.
+
+### Fixed
+- **A ROUTE written *about* in prose poisoned the extraction.** The pattern
+  searched the whole turn's assistant text, so a turn that routed correctly and
+  then mentioned a counter-example — "for comparison, `ROUTE: research` would be
+  invalid" — had `research` as its last extracted value and was **denied**. The
+  pattern is now anchored to the start of a line (`re.M`, optional `>` blockquote
+  marker), which is the only form the block actually emits.
+- **A partial card read denied a legal lane.** `valid_lanes()` called
+  `lane_values()` and trusted the result, but `_read_cards` skips an unparseable
+  card and keeps going — deliberate per-card isolation. A card that was merely
+  mid-edit therefore produced a set *missing* its own lane rather than an empty
+  one, and denied a correctly-routed turn. `valid_lanes()` now compares the parsed
+  count against the `*.json` count and returns no opinion unless the read was
+  complete. The 0.10.1 rationale ("unreadable cards produce an empty set") was
+  simply not true of the ordinary failure.
+- **The deny stamped the fire-once sentinel, so an unchanged retry passed.**
+  The sentinel write sat before both exits, which is right for a *missing* ROUTE
+  (never nag a multi-tool turn twice) and wrong for a *wrong lane*: the deny
+  bought one round trip of friction and no correction. The enum path no longer
+  stamps. Re-declaring a legal lane clears it, so there is no loop to get stuck in.
+- **Two forbidden forms read as legal.** The old `[a-z][a-z0-9-]*` capture stopped
+  at the first illegal character, so `oh-my-project/oh-my-docs` (a joined pair the
+  cards forbid) captured a legal `oh-my-project` and passed, and `ROUTE: RESEARCH`
+  captured nothing at all — indistinguishable from "no declaration", so it passed
+  too. The capture is now the whole token.
+- **A half-flushed line could be judged.** `> **ROUTE →** oh-my` is not the lane
+  `oh-my`; it is `oh-my-project` a keystroke early, and `has_route_line()` had
+  already stopped the retry loop. The pattern now requires trailing whitespace, so
+  an unfinished declaration is not matched and therefore not judged — the safe
+  direction for a hook whose contract is fail-open. (The capture also excludes a
+  leading `*`: `\**` backtracks, and on that same input it gave back one asterisk
+  and captured the other as the lane. Python 3.9 has no possessive quantifier.)
+
+### Not changed — one review finding that does not hold
+The review argued the check would miss most of its motivating population, because
+`run()` returns early on `agent_id`/`agent_type` and 12 of the 15 bad records came
+from teammate turns. Measured instead of accepted: `route_stop_guard.py` and
+`route_log.py` contain no `agent_id`/`agent_type` check at all, and every one of
+the 15 records carries a `session_id` resolving to its own transcript in the
+project directory — 11 distinct sessions. Those are separate Claude Code sessions,
+not in-process subagents, and `route_guard` applies to them normally. The early
+return is real; it just does not cover this population.
+
+### Tests
+236 passed (231 → +5): prose mention ignored, whole-token capture (joined pair /
+uppercase / backticked), half-flushed line skipped, partial card read yields no
+opinion, enum deny leaves the turn ungated across two identical calls.
+
 ## 0.10.1 — 2026-08-29
 `handle-directly`의 정의가 **둘**이었다. 이 릴리스는 그걸 하나로 만들고, ROUTE 의 *값*을
 처음으로 검사한다.

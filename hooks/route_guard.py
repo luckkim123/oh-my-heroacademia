@@ -23,13 +23,39 @@ def has_route_line(text):
     return bool(_ROUTE_RE.search(text))
 
 
-# The declared VALUE, not just the token. route_log.lanes_in's regex, verbatim —
-# it already survives every emitted form (`> **ROUTE →** x`, `ROUTE: x`).
-_LANE_VALUE_RE = re.compile(r"ROUTE\s*(?:->|→|:)\**\s*([a-z][a-z0-9-]*)")
+# The declared VALUE, not just the token. Three things this pattern must do that
+# route_log.lanes_in's does not, each from an adversarial review of the first
+# version (codex, 2026-08-29):
+#
+#   ^…>?…    Anchor to the start of a line. The emitted form is always a line of
+#            its own (`> **ROUTE →** x`), while a ROUTE written *about* routing
+#            sits mid-sentence. Without the anchor, "for comparison, `ROUTE:
+#            research` is invalid" made the last extracted value `research` and
+#            denied a correctly-routed turn.
+#   (\S+)    Capture the whole token, not `[a-z][a-z0-9-]*`. The narrow class
+#            stopped at the first illegal character, so `oh-my-project/oh-my-docs`
+#            (a form the cards explicitly forbid) captured a legal `oh-my-project`
+#            and passed, and `ROUTE: RESEARCH` captured nothing at all — which
+#            reads as "no declaration" and also passed.
+#   (?=\s)   Require a trailing whitespace. A declaration sitting at the very end
+#            of the scanned window may be a half-flushed line: `> **ROUTE →**
+#            oh-my` would otherwise be judged as the lane `oh-my` and denied a
+#            moment before it finished writing `oh-my-project`. Not matching it
+#            means not judging it, which is the safe direction for this hook.
+#
+# The capture excludes a leading `*` on purpose. `\**` is greedy but backtracks,
+# so on a half-flushed `> **ROUTE →** oh-my` it gave back one asterisk and
+# captured the other one as the lane. Python 3.9 has no possessive quantifier
+# (this hook targets py39), so the first character is constrained instead.
+_LANE_VALUE_RE = re.compile(
+    r"^[ \t]*>?[ \t]*\**ROUTE[ \t]*(?:->|→|:)\**[ \t]*([^\s*]\S*)(?=\s)", re.M)
 
 
 def declared_lanes(text):
-    """Every lane value declared in this turn, in order of declaration."""
+    """Every lane value declared on a line of its own, in order of declaration.
+
+    A ROUTE mentioned inside a sentence is prose about routing, not a routing
+    declaration, and is deliberately not returned."""
     return _LANE_VALUE_RE.findall(text or "")
 
 
@@ -39,13 +65,26 @@ def valid_lanes():
     Returns an EMPTY set on any failure, and the caller treats empty as
     "no opinion" — an unreadable card directory must never turn the enum check
     into a gate that denies every lane. Same fail-open contract as the rest of
-    this hook."""
+    this hook.
+
+    A PARTIAL read counts as a failure, and that is the whole reason this is not
+    a one-line call. `_read_cards` skips an unparseable card and keeps going —
+    deliberate, so one malformed card cannot drop every other card's routing
+    info. But the resulting set is missing a legal lane rather than empty, so a
+    card that is merely mid-edit would make its own lane illegal and deny a
+    correctly-routed turn. Only a complete read gets an opinion; the count is
+    cards + 1 for handle-directly, which also refuses to trust duplicate names.
+    (Named by the codex review of the first version, 2026-08-29.)"""
     try:
         here = os.path.dirname(os.path.abspath(__file__))
         if here not in sys.path:      # same sibling-import shim route_stop_guard uses
             sys.path.insert(0, here)
         import route_emit
-        return route_emit.lane_values(route_emit.CARDS_DIR)
+        cards = list(route_emit.CARDS_DIR.glob("*.json"))
+        lanes = route_emit.lane_values(route_emit.CARDS_DIR)
+        if not cards or len(lanes) != len(cards) + 1:
+            return set()
+        return lanes
     except Exception:
         return set()
 
@@ -305,33 +344,41 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
                 # writer is still behind and the wait is the whole point.
                 if window and len(window) == prev_len:
                     break
-        # Mark this turn as gated so subsequent tool calls in it are not re-checked.
-        # ponytail: this fires even when THIS call ends up denied (write happens
-        # before the has_route_line check below) — a denied first call still
-        # stamps the sentinel, so a mechanical retry of the same tool call passes
-        # with no ROUTE line ever emitted. Deliberate: fire-once is keyed per-turn,
-        # not per-attempt, to never nag a multi-tool turn twice (see decide()'s
-        # docstring). Ceiling: a denied call is indistinguishable from a granted
-        # one to later calls in the same turn. Upgrade path if this bypass is ever
-        # exploited: key the sentinel per-attempt/per-tool-call instead of per-turn
-        # (e.g. only mark gated on an actual allow), at the cost of re-scanning on
-        # every subsequent call in a multi-tool turn.
-        sentinel_write(session_id, turn_id)
+        # Below, each exit marks this turn as gated so later tool calls in it are
+        # not re-checked — EXCEPT the enum deny, which deliberately does not.
+        # ponytail: the no-ROUTE deny still stamps, so a mechanical retry of the
+        # same tool call passes with no ROUTE line ever emitted. Deliberate:
+        # fire-once is keyed per-turn, not per-attempt, to never nag a multi-tool
+        # turn twice (see decide()'s docstring). Ceiling: a denied call is
+        # indistinguishable from a granted one to later calls in the same turn.
+        # Upgrade path if this bypass is ever exploited: key the sentinel
+        # per-attempt/per-tool-call instead of per-turn, at the cost of
+        # re-scanning on every subsequent call in a multi-tool turn.
         if has_route_line(window):
             # A ROUTE exists — is its VALUE a lane? Only the last declaration is
             # judged: a turn that re-routed mid-flight has corrected itself, and
             # denying it for the value it already abandoned is a false positive.
-            # An empty `valid` means the cards were unreadable — no opinion, allow.
+            # An empty `valid` means the cards were not read completely — no
+            # opinion, allow.
             valid = valid_lanes()
             declared = declared_lanes(window)
             if valid and declared and declared[-1] not in valid:
+                # Deliberately NOT stamping the fire-once sentinel on this path.
+                # For a MISSING ROUTE the stamp is right — never nag a multi-tool
+                # turn twice. For a WRONG lane it is not: the stamp would let an
+                # unchanged retry of the same call straight through, so the deny
+                # would buy one round trip of friction and no correction at all
+                # (named by the codex review, 2026-08-29). Re-declaring a legal
+                # lane clears it; there is no loop to get stuck in.
                 return 0, {"hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
                     "permissionDecisionReason": _ENUM_DENY_TEMPLATE.format(
                         bad=declared[-1], valid=" | ".join(sorted(valid))),
                 }}
+            sentinel_write(session_id, turn_id)
             return 0, None
+        sentinel_write(session_id, turn_id)
         return 0, {"hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
