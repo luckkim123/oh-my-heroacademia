@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.10.1 — 2026-08-29
+`handle-directly`의 정의가 **둘**이었다. 이 릴리스는 그걸 하나로 만들고, ROUTE 의 *값*을
+처음으로 검사한다.
+
+**무엇이 어떻게 틀렸나 (한 번도 고쳐진 적 없다 — 재발이 아니다).** 주입 블록은 ROUTE 형식
+절에서 `handle-directly = 위임 없이 직접 처리(스킬·에이전트 0)`라고 *기제*로 정의하고,
+캐스케이드에서 다시 `*적극적 정의*로만 성립한다(단일 사실 lookup, …)`라고 *작업유형*으로
+정의했다. 둘은 같은 것을 말하지 않는다: 기제 쪽은 먼저 나오고, 위임을 안 한 모든 턴이
+자동으로 통과한다 — 그건 판정의 **근거**가 아니라 판정의 **결과**다. 그리고 3순위 문장은
+`아무것도 아니면 handle-directly`라는 소거법 규칙이어서, 소거법을 금지하는 바로 다음 문장과
+같은 단락 안에서 충돌했다.
+
+**실측 (vault `.hq/runtime/routing/routing.jsonl`, 788행 → turn_id dedup 657턴).**
+`work` 플래그를 가진 253턴 중 handle-directly 가 **90턴(36%)에 등장**하고 **45턴(18%)에서
+단독**이었다. 그 45턴을 트랜스크립트로 조인해 실제 복잡도를 라벨링한 결과:
+
+| 신호 | 발화 |
+|:---|---:|
+| `n_tool>=3` (기존 카드가 쓰던 "3+ 액션") | 39/45 = **86%** |
+| `distinct_files>=2` | 14/45 = 31% |
+| 편집(Edit/Write) 발생 | 20/45 = **44%** |
+| Agent 위임 발생 | 0/45 = 0% |
+
+즉 handle-directly 로 선언된 작업턴의 **44%가 파일을 고쳤고**(최대 14파일·71 툴콜),
+"3+ 액션" 임계값은 86%에 발화해 **검사기로 쓸 수 없다**. 이 수치가 아래 문구를 정한다.
+
+### Changed
+- `hooks/route_emit.py`: 정의를 모듈 상수 **하나**로 정본화 — `HD_DEF_MARKER`,
+  `HD_POSITIVE_CASES`, `HANDLE_DIRECTLY_DEF`. ROUTE 형식 절의 기제 문장은 정의에서
+  **표기 규칙으로 강등**하고("레인 이름과 같이 쓰지 말 것"), 그 자리에 `'스킬·에이전트를 안
+  썼다'는 결과지 근거가 아니다`를 명시했다. 캐스케이드 3순위의 소거법 규칙은 제거하고,
+  **"셋 중 어디에도 못 넣으면 2순위 작업방식으로 내려라(도메인이 없으면 oh-my-claudecode)"**
+  로 대체했다. 주입 블록 3,338자 → 3,509자 (상한 4,000자).
+- `skills/routing/SKILL.md` 3순위: 같은 정의로 재작성. 훅 요약과 스킬 본문이 갈리면 정의가
+  재생산되므로, 새 테스트가 훅 상수의 세 항목이 본문에 남아 있는지 잠근다(공백 정규화 비교).
+
+### Added
+- **ROUTE 값의 enum 검증** (`hooks/route_guard.py`). `has_route_line()`은 ROUTE **토큰**만
+  봤고 값은 한 번도 안 봤다. `declared_lanes()`가 값을 뽑고, `valid_lanes()`가 `cards/*.json`
+  에서 합법 집합을 만든다(하드코딩 아님 — 새 카드가 가드 편집 없이 라우팅 가능해야 한다).
+  마지막 선언만 판정한다: 도중에 재라우팅한 턴은 이미 자기를 고쳤으므로 버린 값으로 막으면
+  거짓양성이다. 카드를 못 읽으면 **빈 집합 = 의견 없음**으로 통과시킨다(fail-open 유지).
+  근거: 위 로그 788행 중 **15행이 enum 밖 값**이었고 어느 층도 저항하지 않았다 —
+  `research`·`code`·`explore`·`execute`·`debug`(OMC **에이전트** 이름, 12건 전부
+  teammate 턴에서 나왔다), `omc`(약칭 1건), `oh-my-orchestrator`(레인이 아닌 하네스 3건).
+  발화율 1.9%라 거의 안 막는다 — 전부에 발화하는 검사기는 아무것도 검사하지 않는다.
+- `hooks/route_emit.py`: `lane_values(cards_dir)` — 위 검증이 쓰는 합법 레인 집합.
+
+### Tests
+231 passed (224 → +7). 새 잠금 5종: 정의 노드가 **정확히 1개**임을 *파싱해서* 단언
+(기존 `test_handle_directly_is_positively_defined`는 긍정 정의의 *존재*만 잠가서, 두 번째
+정의가 되살아나도 초록이었다), 훅↔스킬 정의 일치, `declared_lanes` 값 추출, enum deny,
+재라우팅 후 통과, 카드 불가독 시 fail-open.
+`test_e2e_allow_when_route_present`의 픽스처 레인 값을 `omc` → `oh-my-claudecode` 로
+정정했다 — `omc` 는 이제 그 자체가 deny 사례이고, 새 테스트가 그 동작을 인수했다.
+
+### Notes
+- **버전 범프는 배포에 불필요하다.** 이 저장소의 플러그인 캐시는 커밋 해시로 해소된다
+  (`~/.claude/plugins/cache/heroacademia/oh-my-heroacademia/<hash>/`, `plugin.json`에
+  `version` 필드 없음 — 실측 2026-08-29). 여기 0.10.1 은 `pyproject.toml` 패키지 버전이자
+  이 CHANGELOG 항목의 주소일 뿐이고, 반영 조건은 push + 플러그인 update 다.
+- 계약층은 **아직 없다.** PLAN §3.3-(1)이 요구한 "기본 레인을 이름표가 아니라 계약으로"
+  — `oh-my-claudecode` 로 낙하한 세션이 실질 작업 전에 계획 동작을 한 번 거치게 하는
+  `PreToolUse` 훅 — 은 이번에 넣지 않았다. 임계값을 먼저 재라는 결정에 따라 위 라벨링을
+  했고, 그 결과 `distinct_files>=2`(31%) 또는 편집 발생(44%)이 후보로 남았다. 훅 자체는
+  다음 회차.
+
 ## 0.10.0 — 2026-08-28
 store-spec §7 stage 2 — fallback 제거. `hooks/omha_paths.py`의 읽기 헬퍼가 그동안
 `new if new.exists() else legacy`로 파일 존재 여부를 봤는데, 이제는 앵커 유무만 본다:

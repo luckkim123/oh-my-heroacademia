@@ -41,6 +41,31 @@ LANE_DIGEST_CAP = 240
 
 SKILL_REF = "oh-my-heroacademia:routing"
 
+# ─── handle-directly: ONE definition, emitted once ────────────────────────────
+# 2026-08-29: this block carried TWO, and they disagreed. A *mechanism*
+# definition sat in the ROUTE-format section ("위임 없이 직접 처리(스킬·에이전트 0)")
+# and a *task-type* definition sat in the cascade. The mechanism one wins by
+# being first and by being trivially satisfiable: any turn that happened not to
+# delegate passes it, which is the outcome of the choice, never its ground.
+# Measured on this vault's routing log the same day — of 253 work turns carrying
+# the `work` flag, 45 declared handle-directly alone, and 20 of those (44%)
+# edited files, one of them 14 distinct files over 71 tool calls.
+# Keep exactly one node; tests/test_route_emit.py parses for it.
+HD_DEF_MARKER = "■ handle-directly 판정 정의"
+HD_POSITIVE_CASES = (
+    "단일 사실 lookup",
+    "이미 정해진 것의 요약·설명",
+    "가벼운 대화 응답",
+)
+HANDLE_DIRECTLY_DEF = (
+    f"{HD_DEF_MARKER} — *적극적 정의* 셋 중 하나일 때만 성립한다:\n"
+    f"  (a) {HD_POSITIVE_CASES[0]}  (b) {HD_POSITIVE_CASES[1]}"
+    f"  (c) {HD_POSITIVE_CASES[2]}·잠정 의견\n"
+    "셋 중 어디에도 못 넣으면 handle-directly 가 아니다 — **2순위 작업방식으로 내려라**\n"
+    "(도메인이 없으면 oh-my-claudecode). '아무것도 안 걸렸다'는 소거법은 근거가 못 된다.\n"
+    "⚠️ '스킬·에이전트를 안 썼다'는 결과지 근거가 아니다 — 위임 여부로 판정하지 마라.\n\n"
+)
+
 
 def _digest(desc: str) -> str:
     """Cut a card body down to LANE_DIGEST_CAP characters.
@@ -74,6 +99,22 @@ def _read_cards(cards_dir: Path):
             yield d["name"], d.get("lane_type"), d["description"]
         except (json.JSONDecodeError, OSError, KeyError, TypeError):
             continue
+
+
+def lane_values(cards_dir: Path) -> set:
+    """Every legal ROUTE value — one per card, plus handle-directly.
+
+    route_guard imports this to reject a declaration outside the enum. Measured
+    on this vault 2026-08-29: 15 of 788 logged records named a value outside it,
+    and nothing anywhere resisted. Twelve were `research`/`code`/`explore`/
+    `execute`/`debug` — OMC agent and skill names, all from teammate/subagent
+    turns, which is exactly where the card's vocabulary does not reach. Three
+    were `oh-my-orchestrator`, an installed plugin that is deliberately NOT a
+    lane (omha cannot assume it is installed — see omha_paths.py).
+
+    Derived from the cards rather than hardcoded: a new card must not need an
+    edit here to become routable."""
+    return {name for name, _, _ in _read_cards(cards_dir)} | {"handle-directly"}
 
 
 def build_routing_context(cards_dir: Path) -> str:
@@ -120,8 +161,8 @@ def build_routing_context(cards_dir: Path) -> str:
         f"  {verdict_enum}|handle-directly\n"
         "응답 맨 앞에 GFM 인용 한 줄(평문·middle-dot 금지):\n"
         f"> **ROUTE →** <{verdict_enum}|handle-directly> · <한 줄 근거>\n"
-        "handle-directly = 위임 없이 직접 처리(스킬·에이전트 0). 레인 이름과 같이 쓰지\n"
-        "말 것 — 'omc · handle-directly'는 모순(omc=위임, handle-directly=직접).\n\n"
+        "표기 규칙(정의 아님): 레인 이름과 같이 쓰지 말 것 — 'omc · handle-directly'는\n"
+        "모순이다. 무엇이 handle-directly 인지는 아래 판정 정의 블록 하나가 정한다.\n\n"
         "■ 레인 (요약 — 카드 description 의 앞부분. '…' = 잘림):\n"
         "· 거버넌스 (WHERE — 파일이 어디 속하나·트리가 규칙 지키나. 산출물 축과 직교)\n"
         f"{governance_body}\n"
@@ -131,9 +172,8 @@ def build_routing_context(cards_dir: Path) -> str:
         f"{work_body}\n\n"
         "■ 캐스케이드 (위에서부터): 0 구조·배치·규칙 문제면 거버넌스 → 1 산출물 도메인이\n"
         "명확하면 그 도메인(논문은 *반드시* oh-my-scholar — citation 가드가 거기에만 있다)\n"
-        "→ 2 아니면 작업방식 → 3 아무것도 아니면 handle-directly. handle-directly 는\n"
-        "*적극적 정의*로만 성립한다(단일 사실 lookup, 이미 정해진 것의 요약·설명, 가벼운\n"
-        "대화 응답). '아무것도 안 걸렸다'는 소거법은 근거가 못 된다.\n\n"
+        "→ 2 아니면 작업방식 → 3 아래 판정 정의에 해당하면 handle-directly.\n\n"
+        f"{HANDLE_DIRECTLY_DEF}"
         f"■ 상세 규칙은 `{SKILL_REF}` 스킬 본문에 있다 — 캐스케이드 세부(2.5순위 의중\n"
         "미결정 게이트), 재라우팅 의무 5종, ANALYZE 템플릿, 출력 순서, 레인 본문 위치.\n"
         "다음 중 하나라도 해당하면 판정·행동 전에 그 스킬을 *읽어라*:\n"

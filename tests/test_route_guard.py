@@ -195,7 +195,67 @@ def test_turn_id_none_when_no_user_line(tmp_path):
 # Injecting sentinel read/write keeps the e2e test pure (no real /tmp file).
 
 def test_e2e_allow_when_route_present(tmp_path):
-    tr = _jsonl([_user_uuid("go", "u1"), _asst_text("> **ROUTE →** omc · x"), _asst_tool("Bash")], tmp_path)
+    # The lane value must be a real one: since the enum check landed, `omc` (the
+    # abbreviation this fixture used to carry) is itself a denial case — see
+    # test_e2e_deny_when_route_names_a_non_lane below, which now owns it.
+    tr = _jsonl([_user_uuid("go", "u1"), _asst_text("> **ROUTE →** oh-my-claudecode · x"),
+                 _asst_tool("Bash")], tmp_path)
+    code, out = rg.run({"transcript_path": tr, "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None)
+    assert code == 0 and out is None
+
+
+# ─── group 5b: enum resistance — a ROUTE token is not a ROUTE value ───────────
+#
+# Measured on this vault 2026-08-29: 15 of 788 logged records named a value
+# outside the card set and nothing resisted at any layer. Twelve were OMC agent
+# names (`research`/`code`/`explore`/`execute`/`debug`) declared from teammate
+# turns; one was `omc`; three were `oh-my-orchestrator`, a harness rather than a
+# routing destination. has_route_line() only ever looked for the token.
+
+def test_declared_lanes_reads_the_value_not_just_the_token():
+    assert rg.declared_lanes("> **ROUTE →** oh-my-claudecode · x") == ["oh-my-claudecode"]
+    assert rg.declared_lanes("ROUTE: research\nROUTE -> handle-directly") == \
+        ["research", "handle-directly"]
+    assert rg.declared_lanes("no declaration here") == []
+
+
+def test_valid_lanes_comes_from_the_cards():
+    """Derived, not hardcoded — a new card must not need an edit in the guard."""
+    lanes = rg.valid_lanes()
+    assert "handle-directly" in lanes and "oh-my-claudecode" in lanes
+    assert "research" not in lanes and "oh-my-orchestrator" not in lanes
+
+
+def test_e2e_deny_when_route_names_a_non_lane(tmp_path):
+    tr = _jsonl([_user_uuid("go", "u1"), _asst_text("> **ROUTE →** research · x"),
+                 _asst_tool("Bash")], tmp_path)
+    code, out = rg.run({"transcript_path": tr, "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None)
+    assert code == 0
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "research" in reason and "oh-my-claudecode" in reason
+
+
+def test_e2e_allows_after_rerouting_to_a_legal_lane(tmp_path):
+    """Only the LAST declaration is judged. A turn that re-routed has already
+    corrected itself; denying it over the value it abandoned is a false positive
+    — and re-routing mid-turn is a behaviour the cards explicitly ask for."""
+    tr = _jsonl([_user_uuid("go", "u1"), _asst_text("ROUTE: research"),
+                 _asst_text("> **ROUTE →** oh-my-claudecode · corrected"),
+                 _asst_tool("Bash")], tmp_path)
+    code, out = rg.run({"transcript_path": tr, "tool_name": "Bash", "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None)
+    assert code == 0 and out is None
+
+
+def test_e2e_enum_check_has_no_opinion_when_cards_unreadable(tmp_path, monkeypatch):
+    """Fail open, same contract as the rest of the hook: an unreadable card
+    directory must never turn this into a gate that denies every lane."""
+    monkeypatch.setattr(rg, "valid_lanes", lambda: set())
+    tr = _jsonl([_user_uuid("go", "u1"), _asst_text("ROUTE: research"),
+                 _asst_tool("Bash")], tmp_path)
     code, out = rg.run({"transcript_path": tr, "tool_name": "Bash", "session_id": "s1"},
                        sentinel_read=lambda s: None, sentinel_write=lambda s, t: None)
     assert code == 0 and out is None

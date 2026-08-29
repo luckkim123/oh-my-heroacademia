@@ -23,6 +23,33 @@ def has_route_line(text):
     return bool(_ROUTE_RE.search(text))
 
 
+# The declared VALUE, not just the token. route_log.lanes_in's regex, verbatim —
+# it already survives every emitted form (`> **ROUTE →** x`, `ROUTE: x`).
+_LANE_VALUE_RE = re.compile(r"ROUTE\s*(?:->|→|:)\**\s*([a-z][a-z0-9-]*)")
+
+
+def declared_lanes(text):
+    """Every lane value declared in this turn, in order of declaration."""
+    return _LANE_VALUE_RE.findall(text or "")
+
+
+def valid_lanes():
+    """The legal ROUTE enum, read from omha's own cards.
+
+    Returns an EMPTY set on any failure, and the caller treats empty as
+    "no opinion" — an unreadable card directory must never turn the enum check
+    into a gate that denies every lane. Same fail-open contract as the rest of
+    this hook."""
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:      # same sibling-import shim route_stop_guard uses
+            sys.path.insert(0, here)
+        import route_emit
+        return route_emit.lane_values(route_emit.CARDS_DIR)
+    except Exception:
+        return set()
+
+
 # Injected user-role records that are NOT the user asking for anything. Claude
 # Code delivers a peer session's message, and the notice that one was delivered,
 # as type=user with string content — structurally identical to a typed prompt.
@@ -208,6 +235,22 @@ _DENY_REASON = (
     "inertia. Then retry the tool call."
 )
 
+# Enum resistance. Measured on this vault 2026-08-29: 15 of 788 logged records
+# named a value outside the card set and nothing anywhere pushed back, so the
+# log — the only evidence any card change is argued from — was quietly polluted.
+# Twelve came from teammate turns naming an OMC *agent* (`research`, `code`,
+# `explore`, `execute`, `debug`); three named `oh-my-orchestrator`, a plugin
+# that is deliberately not a lane. Rare by construction (1.9%), so this denies
+# almost never — a detector that fires on everything detects nothing.
+_ENUM_DENY_TEMPLATE = (
+    "This turn's ROUTE names `{bad}`, which is not a lane. The value must be exactly "
+    "one of: {valid}. An agent name, a skill name or a plugin name is not a lane — "
+    "`research`/`code`/`explore`/`execute`/`debug` are OMC agents, and "
+    "`oh-my-orchestrator` is a harness, not a routing destination. Re-judge with the "
+    "omha cascade, emit a fresh `> **ROUTE →** <lane> · <reason>` line carrying a "
+    "legal value, then retry the tool call."
+)
+
 
 def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
         scan=_scan_turn, sleep=time.sleep):
@@ -275,6 +318,19 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
         # every subsequent call in a multi-tool turn.
         sentinel_write(session_id, turn_id)
         if has_route_line(window):
+            # A ROUTE exists — is its VALUE a lane? Only the last declaration is
+            # judged: a turn that re-routed mid-flight has corrected itself, and
+            # denying it for the value it already abandoned is a false positive.
+            # An empty `valid` means the cards were unreadable — no opinion, allow.
+            valid = valid_lanes()
+            declared = declared_lanes(window)
+            if valid and declared and declared[-1] not in valid:
+                return 0, {"hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": _ENUM_DENY_TEMPLATE.format(
+                        bad=declared[-1], valid=" | ".join(sorted(valid))),
+                }}
             return 0, None
         return 0, {"hookSpecificOutput": {
             "hookEventName": "PreToolUse",

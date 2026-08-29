@@ -271,6 +271,45 @@ def test_handle_directly_is_positively_defined(tmp_path):
     assert "여러 턴짜리 설계 탐색" in _skill()
 
 
+def test_handle_directly_has_exactly_one_definition(tmp_path):
+    """부재 단언이 아니라 *파싱*이다.
+
+    2026-08-29 이전 이 블록에는 정의가 둘이었다 — ROUTE 형식 절의 *기제* 정의
+    ("위임 없이 직접 처리(스킬·에이전트 0)")와 캐스케이드의 *작업유형* 정의. 기제
+    쪽은 먼저 나오고 위임을 안 한 모든 턴이 통과하므로, 판정의 근거가 아니라
+    판정의 결과를 정의로 둔갑시킨다. 바로 위 긍정-정의 테스트는 *존재*만 잠그므로
+    두 번째 정의가 되살아나도 초록으로 통과한다."""
+    (tmp_path / "omc.json").write_text(json.dumps(
+        {"name": "oh-my-claudecode", "description": "Throughput lane.", "lane_type": "work"}))
+    ctx = route_emit.build_routing_context(tmp_path)
+    assert ctx.count(route_emit.HD_DEF_MARKER) == 1, "판정 정의 노드는 정확히 1개여야 한다"
+    # 정본 블록 밖에서 handle-directly 를 다시 *규정하는* 줄이 생기면 실패한다.
+    defining = ("=", "성립한다", "이란", "란 ")
+    offenders = [ln for ln in ctx.splitlines()
+                 if "handle-directly" in ln
+                 and route_emit.HD_DEF_MARKER not in ln
+                 and any(tok in ln for tok in defining)]
+    assert not offenders, f"정본 밖에 정의가 또 있다: {offenders}"
+    # 소거법 *규칙*은 캐스케이드에서 사라지고, 낙하 지시가 그 자리를 대신한다.
+    assert "아무것도 아니면 handle-directly" not in ctx
+    assert "2순위 작업방식으로 내려라" in ctx
+
+
+def test_skill_and_hook_agree_on_the_positive_definition():
+    """본문과 요약이 갈리면 정의가 재생산된다.
+
+    사본을 두는 게 아니라 갈라지면 실패하는 잠금이다 — 훅 정본의 세 항목이
+    스킬 본문에도 그대로 있어야 한다."""
+    # Whitespace-normalized: the skill body is hard-wrapped, so a phrase split
+    # across two lines is the same rule, not a drift. Comparing raw made this
+    # lock fail on line wrapping alone the first time it ran.
+    body = " ".join(_skill().split())
+    for case in route_emit.HD_POSITIVE_CASES:
+        assert case in body, f"skill body lost the positive case: {case}"
+    assert "2순위 작업방식으로 내려라" in body
+    assert "위 어느 것도 아님 → handle-directly" not in body, "소거법 정의가 되살아났다"
+
+
 def test_emitted_context_stays_under_char_ceiling():
     """이 블록은 *모든 세션의 모든 턴*에 주입된다 — 증가는 영구 비용이다.
 
