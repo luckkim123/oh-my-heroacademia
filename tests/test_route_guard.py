@@ -615,3 +615,184 @@ def test_real_user_turn_accepts_bare_string_content():
     # tool_result 는 여전히 제외 (문자열이든 리스트든 toolUseResult 가 있으면 아님)
     assert not rg._is_real_user_turn(
         {"type": "user", "toolUseResult": {}, "message": {"content": "x"}})
+
+
+# ─── group 9: denial diagnostics — what the gate saw when it decided ──────────
+#
+# The retry budget (8 x 0.15s) was set from a 2026-08-23 sample and the
+# 2026-08-31 omo evaluation found three denials 2.8-3.5s after their ROUTE, all
+# past it. That is not evidence to raise it: a record's `timestamp` is when the
+# model generated the message, not when the writer flushed it, and a 0.43s gap
+# in the same session passed. So the gate records what it actually saw and the
+# budget gets decided from the sample. These tests pin the fields that sample
+# is made of — a diagnostic missing `retry_exit` or `attempts_used` answers
+# nothing, and a diagnostic that changes the decision is a defect, not data.
+
+
+def _spy():
+    seen = []
+    return seen, lambda cwd, diag: seen.append((cwd, diag))
+
+
+def test_denial_records_what_the_gate_saw(tmp_path):
+    seen, record = _spy()
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash",
+                        "session_id": "s1", "cwd": "/tmp/proj"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=lambda _t: ("no route here", "u1"),
+                       sleep=lambda s: None, record=record)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert len(seen) == 1
+    cwd, diag = seen[0]
+    assert cwd == "/tmp/proj"
+    assert diag["outcome"] == "deny_no_route"
+    assert diag["turn_id"] == "u1" and diag["session_id"] == "s1"
+    assert diag["tool"] == "Bash"
+    # A non-empty window that stopped growing: the writer had caught up, so this
+    # denial is NOT the flush race. That distinction is the whole point.
+    assert diag["retry_exit"] == "window_stalled"
+    assert diag["attempts_used"] == 1
+    assert diag["window_chars_first"] == len("no route here")
+    assert diag["budget_attempts"] == rg._RETRY_ATTEMPTS
+    assert diag["budget_interval_s"] == rg._RETRY_INTERVAL
+
+
+def test_an_empty_transcript_denial_is_marked_budget_exhausted(tmp_path):
+    """The flush-race case: nothing was ever visible, so the budget ran out."""
+    seen, record = _spy()
+    rg.run({"transcript_path": "irrelevant", "tool_name": "Edit", "session_id": "s1"},
+           sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+           scan=lambda _t: ("", "u1"), sleep=lambda s: None, record=record)
+    diag = seen[0][1]
+    assert diag["outcome"] == "deny_no_route"
+    assert diag["retry_exit"] == "budget_exhausted"
+    assert diag["attempts_used"] == rg._RETRY_ATTEMPTS
+    assert diag["window_chars_first"] == 0
+
+
+def test_a_retry_rescue_is_recorded_as_the_counterfactual(tmp_path):
+    """How often the budget was NEEDED and SUFFICIENT — denials alone cannot say."""
+    calls = []
+    seen, record = _spy()
+
+    def scan(_t):
+        calls.append(1)
+        return (("still flushing", "u1") if len(calls) == 1
+                else ("> **ROUTE →** oh-my-claudecode · x", "u1"))
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash",
+                        "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=scan, sleep=lambda s: None, record=record)
+    assert out is None                      # allowed
+    diag = seen[0][1]
+    assert diag["outcome"] == "allow_after_retry"
+    assert diag["retry_exit"] == "route_found"
+    assert diag["attempts_used"] == 1
+
+
+def test_the_common_path_records_nothing(tmp_path):
+    """A first scan that already has a ROUTE is most turns; logging them all
+    would bury the rows the budget question is actually about."""
+    seen, record = _spy()
+    rg.run({"transcript_path": "irrelevant", "tool_name": "Bash", "session_id": "s1"},
+           sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+           scan=lambda _t: ("> **ROUTE →** handle-directly · x", "u1"),
+           sleep=lambda s: None, record=record)
+    assert seen == []
+
+
+def test_a_bad_lane_denial_names_the_lane_it_rejected(monkeypatch):
+    """valid_lanes() is stubbed, not read. Reading it made the test skip itself
+    whenever the cards were unreadable — a test that passes by not running
+    (codex, 2026-08-31). The decision is asserted too: a regression that records
+    `deny_bad_lane` and then ALLOWS the call used to pass this."""
+    monkeypatch.setattr(rg, "valid_lanes", lambda: {"oh-my-claudecode", "handle-directly"})
+    seen, record = _spy()
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash",
+                        "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=lambda _t: ("> **ROUTE →** not-a-lane · x", "u1"),
+                       sleep=lambda s: None, record=record)
+    assert code == 0
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    diag = seen[0][1]
+    assert diag["outcome"] == "deny_bad_lane"
+    assert diag["declared"] == "not-a-lane"
+
+
+def test_a_scan_exception_is_recorded_rather_than_silently_failing_open(tmp_path):
+    """A partially flushed JSONL line raising mid-retry used to fail open through
+    the outer handler with nothing written — dropping exactly the flush-race
+    outcomes the sample exists to measure."""
+    calls = []
+    seen, record = _spy()
+
+    def scan(_t):
+        calls.append(1)
+        if len(calls) == 1:
+            return ("", "u1")
+        raise ValueError("half-written JSONL line")
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash",
+                        "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=scan, sleep=lambda s: None, record=record)
+    assert (code, out) == (0, None)          # still fails open
+    assert seen[0][1]["outcome"] == "error_fail_open"
+
+
+def test_a_later_scans_turn_id_is_kept_for_correlation(tmp_path):
+    """The first scan can hit an empty transcript and carry turn_id=None; the
+    row would then name no turn at all. The gate's own turn_id is deliberately
+    NOT changed — that keys the sentinel and this item is instrumentation."""
+    calls = []
+    seen, record = _spy()
+
+    def scan(_t):
+        calls.append(1)
+        return (("", None) if len(calls) == 1
+                else ("> **ROUTE →** oh-my-claudecode · x", "u-late"))
+
+    rg.run({"transcript_path": "irrelevant", "tool_name": "Bash", "session_id": "s1"},
+           sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+           scan=scan, sleep=lambda s: None, record=record)
+    diag = seen[0][1]
+    assert diag["turn_id"] is None           # unchanged: what the gate used
+    assert diag["turn_id_seen"] == "u-late"  # added: what it can be joined on
+
+
+def test_a_symlinked_diagnostics_path_is_refused(tmp_path):
+    """A symlink here pointing at /dev/fd/1 would put diagnostic JSON on the
+    hook's stdout ahead of the permission envelope and corrupt the protocol."""
+    routing = tmp_path / ".hq" / "runtime" / "routing"
+    routing.mkdir(parents=True)
+    target = tmp_path / "elsewhere.txt"
+    target.write_text("", encoding="utf-8")
+    (routing / "gate-diagnostics.jsonl").symlink_to(target)
+
+    rg._record_diag(str(tmp_path), {"outcome": "deny_no_route"})
+    assert target.read_text(encoding="utf-8") == ""       # nothing followed through
+
+
+def test_a_real_diagnostics_path_is_written(tmp_path):
+    """The control for the test above: without a symlink the row lands."""
+    routing = tmp_path / ".hq" / "runtime" / "routing"
+    routing.mkdir(parents=True)
+    rg._record_diag(str(tmp_path), {"outcome": "deny_no_route"})
+    rows = (routing / "gate-diagnostics.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [json.loads(r)["outcome"] for r in rows] == ["deny_no_route"]
+
+
+def test_a_broken_recorder_never_changes_the_decision(tmp_path):
+    """Fail-open extends to the instrument: logging is not allowed to gate."""
+    def explode(cwd, diag):
+        raise RuntimeError("disk full")
+
+    code, out = rg.run({"transcript_path": "irrelevant", "tool_name": "Bash",
+                        "session_id": "s1"},
+                       sentinel_read=lambda s: None, sentinel_write=lambda s, t: None,
+                       scan=lambda _t: ("no route here", "u1"),
+                       sleep=lambda s: None, record=explode)
+    assert code == 0
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"

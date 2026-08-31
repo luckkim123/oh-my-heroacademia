@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.10.3 — 2026-08-31 — the gate could deny a real ROUTE and never say why
+
+The ROUTE gate has a known false-positive class: a real-work tool can fire before
+the assistant's ROUTE text reaches the transcript JSONL, so the hook reads the
+file too early and denies a turn that declared correctly. 0.10.0 mitigated it
+with a re-scan budget (8 x 0.15s) sized from a 2026-08-23 sample. The 2026-08-31
+omo evaluation found three more denials sitting **2.8-3.5s** after their ROUTE,
+all past that budget.
+
+**That is not evidence to raise it, and this release deliberately does not.** A
+transcript record's `timestamp` is when the model generated the message, not
+when the writer flushed it, and the same session has a counterexample — a 0.43s
+ROUTE-to-tool gap that passed. Timing alone cannot separate "the writer was
+behind" from "the turn really had no ROUTE". Raising the budget on that would
+put up to 1.2s more on **every** real-work tool call in every session, to fix a
+denial that costs one model round trip. So: measure first.
+
+### Added
+
+- `gate-diagnostics.jsonl` beside `routing.jsonl`, one row per decision the
+  retry loop was involved in. It carries what only the gate can see —
+  `retry_exit` (`route_found` / `window_stalled` / `budget_exhausted` /
+  `not_entered`), `attempts_used`, `window_chars_first` vs `_final`,
+  `waited_ms`, and the budget the sample was taken under, so a later reader
+  cannot mistake numbers from an 8x0.15s gate for numbers from a retuned one.
+- **Rescues are recorded, not just denials.** `allow_after_retry` is the
+  counterfactual a denial cannot supply on its own: how often the budget was
+  needed *and* sufficient. A turn whose first scan already had a ROUTE writes
+  nothing — that is most turns and would bury the rows the question is about.
+- Same opt-in-by-directory rule as `routing.jsonl`: a project that never made
+  `.hq/runtime/routing/` logs nothing.
+
+### Fixed
+
+- **A recorder that raised took the whole gate open with it.** `run()`'s outer
+  `except Exception` would catch it and fail open, so a logging bug would
+  silently disable enforcement. Writes now go through a local `emit()` that
+  swallows its own failures — the instrument must never gate the gate. Caught
+  by its own test, before review.
+- **A `scan()` exception mid-retry failed open with nothing recorded** — a
+  partially flushed JSONL line is the obvious case, and it dropped exactly the
+  flush-race outcomes this sample exists to measure. Recorded as
+  `error_fail_open`; the decision is unchanged.
+- **A row whose first scan hit an empty transcript named no turn at all.**
+  Retry scans discarded their `turn_id`, so `turn_id` was null on precisely the
+  rows most worth correlating. `turn_id_seen` now carries the latest id any scan
+  saw. The gate's own `turn_id` is deliberately untouched — it keys the sentinel,
+  and changing it would change behaviour in a release that is instrumentation.
+- **The diagnostics path was opened by name and followed symlinks.** One planted
+  at `.hq/runtime/routing/gate-diagnostics.jsonl` and pointing at `/dev/fd/1`
+  put diagnostic JSON on the hook's stdout ahead of the permission envelope and
+  corrupted the protocol — reproduced, not theorised. A FIFO with no reader
+  hung the hook. Now `O_NOFOLLOW | O_NONBLOCK | O_APPEND` plus an `S_ISREG`
+  check on the fd; `O_APPEND` also makes concurrent hook processes safe.
+- **A test that passed by not running.** The bad-lane case read the live
+  `valid_lanes()` and returned early whenever the cards were unreadable, and it
+  never asserted the tool was actually denied — a regression that recorded
+  `deny_bad_lane` and then allowed the call passed it. Stubbed and asserted.
+
+### Notes
+
+- Reviewed by both vendor families against the same commit, per omo's 2-family
+  release gate. **agy found nothing; codex found four, and all four are above.**
+  The split is the argument for running two: the same pairing on omo's gate the
+  same day went the other way, with agy naming six and codex five. Neither
+  family is the better reviewer — they are different reviewers.
+- Verification: 56 cases in `tests/test_route_guard.py`, up from 46, and each
+  fix has a behavioural control (reverting all three code fixes fails exactly
+  their three tests, with the file still valid Python). Live end-to-end through
+  the real hook script into the vault's real `.hq/runtime/routing/`, then the
+  probe row removed so the sample starts clean.
+- **The budget is untouched. Setting it is step 2 and needs the sample first.**
+
 ## 0.10.2 — 2026-08-29 — the enum gate shipped bypassable and could deny correct turns
 
 0.10.1's enum check was handed to a **different model** (codex, via

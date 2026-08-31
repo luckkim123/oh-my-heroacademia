@@ -4,9 +4,11 @@
 See tests/test_route_guard.py for the contract and the verified transcript schema.
 Stdlib only. Fails open on every error so a broken hook never blocks the session.
 """
+import datetime as _dt
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 import time
@@ -257,6 +259,57 @@ def _sentinel_write(session_id, turn_id):
         pass
 
 
+def _record_diag(cwd, diag):
+    """Append one gate diagnostic to `gate-diagnostics.jsonl`, best-effort.
+
+    The retry budget below is set from a 2026-08-23 sample, and the 2026-08-31
+    omo evaluation found three more denials sitting 2.8-3.5s after their ROUTE —
+    all past the 1.2s budget. That is NOT enough to raise it: a transcript
+    record's `timestamp` is when the model generated the message, not when the
+    writer flushed it, and there is a counterexample in the same session (a
+    0.43s ROUTE-to-tool gap that passed). Timing alone cannot separate "the
+    writer was behind" from "the turn really had no ROUTE".
+
+    Only the gate can, because only the gate knows what it actually saw: how
+    long the window was on the first scan, whether it grew, and which of the
+    three loop exits it took. So record that at every decision the retry loop
+    was involved in, and set the budget from the sample later. Raising it first
+    would put up to 1.2s more on every real-work tool call in every session on
+    no evidence — a cost that goes everywhere to fix a denial that costs one
+    round trip.
+
+    Written beside routing.jsonl under the same opt-in-by-directory rule, so a
+    project that never made the directory logs nothing. Failure is silent: this
+    must never change what the gate decides.
+    """
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if here not in sys.path:      # same sibling-import shim valid_lanes uses
+            sys.path.insert(0, here)
+        import route_log
+        directory = route_log.log_dir(cwd)
+        if directory is None:
+            return
+        # O_NOFOLLOW plus a regular-file check. A symlink planted at this path
+        # and pointing at /dev/fd/1 puts diagnostic JSON on the hook's STDOUT
+        # ahead of the permission envelope and corrupts the protocol — codex
+        # reproduced exactly that, 2026-08-31 — and a FIFO with no reader would
+        # block the hook forever. O_NONBLOCK keeps even the open from hanging.
+        # O_APPEND makes each small write atomic, which is what lets several
+        # hook processes share the file.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK
+        fd = os.open(os.path.join(str(directory), "gate-diagnostics.jsonl"),
+                     flags, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return
+            os.write(fd, (json.dumps(diag, ensure_ascii=False) + "\n").encode("utf-8"))
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+
+
 # Flush-race budget. A real-work tool can fire before the assistant's ROUTE text
 # reaches the transcript JSONL, and 3 x 0.15s (0.30s) was not enough. Measured
 # 2026-08-23 by replaying _scan_turn against a live session's transcript at each
@@ -292,7 +345,7 @@ _ENUM_DENY_TEMPLATE = (
 
 
 def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
-        scan=_scan_turn, sleep=time.sleep):
+        scan=_scan_turn, sleep=time.sleep, record=_record_diag):
     """Core gate. Returns (exit_code, stdout_dict_or_None). Fails open on any error.
 
     Flush-race tolerant: a real-work tool can fire before the assistant's ROUTE text
@@ -328,22 +381,84 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
         # by an earlier tool call, so never re-pay the retry-sleep here.
         if _sentinel_matches_turn(sentinel_read(session_id), turn_id):
             return 0, None
-        # Retry only when the first scan missed the ROUTE (possible flush lag).
-        if not has_route_line(window):
-            for _ in range(_RETRY_ATTEMPTS):
-                prev_len = len(window)
-                sleep(_RETRY_INTERVAL)
-                window, _ = scan(transcript)
-                if has_route_line(window):
-                    break
-                # Exit early once the writer has demonstrably caught up: a
-                # NON-EMPTY window that stopped growing is a genuine negative,
-                # so spending the rest of the budget only adds latency. An empty
-                # window is not evidence of anything — the tool call proves an
-                # assistant message exists, so an empty transcript means the
-                # writer is still behind and the wait is the whole point.
-                if window and len(window) == prev_len:
-                    break
+        cwd = stdin_obj.get("cwd", "")
+        # What the gate saw, for the budget question the timing alone cannot
+        # settle. See _record_diag.
+        first_chars, attempts, retry_exit = len(window), 0, "not_entered"
+        turn_id_seen = turn_id
+        started = time.monotonic()
+
+        def diag(outcome, **extra):
+            return {
+                "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+                "outcome": outcome,
+                "turn_id": turn_id,
+                # The gate keys its sentinel on the FIRST scan's id; this is
+                # the latest one any scan saw, so a row whose first scan hit an
+                # empty transcript is still correlatable.
+                "turn_id_seen": turn_id_seen,
+                "session_id": session_id,
+                "tool": stdin_obj.get("tool_name", ""),
+                "retry_exit": retry_exit,
+                "attempts_used": attempts,
+                # The budget this sample was taken under. Without it a later
+                # reader cannot tell numbers from an 8x0.15s gate from numbers
+                # taken after somebody retuned it — which is the whole point of
+                # collecting them.
+                "budget_attempts": _RETRY_ATTEMPTS,
+                "budget_interval_s": _RETRY_INTERVAL,
+                "waited_ms": round((time.monotonic() - started) * 1000),
+                "window_chars_first": first_chars,
+                "window_chars_final": len(window),
+                **extra,
+            }
+
+        def emit(outcome, **extra):
+            # The instrument must never gate the gate. Without this the outer
+            # `except Exception` below would catch a recorder failure and
+            # fail-open the whole call — a logging bug would silently disable
+            # enforcement, which is the expensive direction of this trade.
+            try:
+                record(cwd, diag(outcome, **extra))
+            except Exception:
+                pass
+
+        try:
+            # Retry only when the first scan missed the ROUTE (possible flush lag).
+            if not has_route_line(window):
+                retry_exit = "budget_exhausted"
+                for _ in range(_RETRY_ATTEMPTS):
+                    attempts += 1
+                    prev_len = len(window)
+                    sleep(_RETRY_INTERVAL)
+                    window, rescan_turn_id = scan(transcript)
+                    # Recorded, not adopted. The first scan's turn_id keys the
+                    # sentinel and changing that would change what the gate does —
+                    # this item is instrumentation. But a row whose first scan saw
+                    # an empty transcript carries turn_id=null and cannot be
+                    # correlated with the turn it decided (codex, 2026-08-31), so
+                    # the later id is kept alongside it.
+                    turn_id_seen = rescan_turn_id or turn_id_seen
+                    if has_route_line(window):
+                        retry_exit = "route_found"
+                        break
+                    # Exit early once the writer has demonstrably caught up: a
+                    # NON-EMPTY window that stopped growing is a genuine negative,
+                    # so spending the rest of the budget only adds latency. An empty
+                    # window is not evidence of anything — the tool call proves an
+                    # assistant message exists, so an empty transcript means the
+                    # writer is still behind and the wait is the whole point.
+                    if window and len(window) == prev_len:
+                        retry_exit = "window_stalled"
+                        break
+        except Exception:
+            # An exception inside the re-scan — a partially flushed JSONL
+            # line is the obvious one — used to fail open through the outer
+            # handler with NOTHING recorded, which drops exactly the
+            # flush-race outcomes this sample exists to measure (codex,
+            # 2026-08-31). The decision is unchanged; only the gap is.
+            emit("error_fail_open")
+            return 0, None
         # Below, each exit marks this turn as gated so later tool calls in it are
         # not re-checked — EXCEPT the enum deny, which deliberately does not.
         # ponytail: the no-ROUTE deny still stamps, so a mechanical retry of the
@@ -370,14 +485,22 @@ def run(stdin_obj, sentinel_read=_sentinel_read, sentinel_write=_sentinel_write,
                 # would buy one round trip of friction and no correction at all
                 # (named by the codex review, 2026-08-29). Re-declaring a legal
                 # lane clears it; there is no loop to get stuck in.
+                emit("deny_bad_lane", declared=declared[-1])
                 return 0, {"hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
                     "permissionDecisionReason": _ENUM_DENY_TEMPLATE.format(
                         bad=declared[-1], valid=" | ".join(sorted(valid))),
                 }}
+            # The rescue is the counterfactual a denial cannot supply on its own:
+            # how often the budget was needed AND sufficient. A turn whose first
+            # scan already had a ROUTE writes nothing — that is the common path
+            # and it would drown the interesting rows.
+            if retry_exit != "not_entered":
+                emit("allow_after_retry")
             sentinel_write(session_id, turn_id)
             return 0, None
+        emit("deny_no_route")
         sentinel_write(session_id, turn_id)
         return 0, {"hookSpecificOutput": {
             "hookEventName": "PreToolUse",
