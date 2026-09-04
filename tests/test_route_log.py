@@ -172,6 +172,88 @@ def test_load_returns_empty_for_a_missing_file(tmp_path):
     assert route_log.load(tmp_path / "nope.jsonl") == []
 
 
+# ─── 회전 ─────────────────────────────────────────────────────────────────────
+
+def _fill(path, n_bytes):
+    """유효한 jsonl 로 파일을 n_bytes 이상 채운다 — load() 가 읽어야 하므로."""
+    with open(path, "a", encoding="utf-8") as f:
+        while path.stat().st_size <= n_bytes:
+            f.write(json.dumps({"turn_id": f"old-{path.stat().st_size}",
+                                "lanes": ["handle-directly"], "pad": "x" * 300}) + "\n")
+            f.flush()
+
+
+def test_record_rotates_once_the_live_file_passes_the_cap(tmp_path):
+    """무한히 자라는 append 로그는 동기화 폴더에서 턴마다 전체를 업로드하게 만든다.
+    상한을 넘으면 라이브 파일은 `.1` 로 밀려나고 새로 시작해야 한다."""
+    (tmp_path / ".omha").mkdir()
+    live = tmp_path / ".omha" / "routing.jsonl"
+    _fill(live, route_log.MAX_BYTES)
+    big = live.stat().st_size
+
+    route_log.record(str(tmp_path), "t-new", "> **ROUTE →** oh-my-docs · x", "p")
+
+    assert (tmp_path / ".omha" / "routing.jsonl.1").stat().st_size == big
+    assert live.stat().st_size < big          # 새로 시작했다
+    assert json.loads(live.read_text().strip())["turn_id"] == "t-new"
+
+
+def test_record_does_not_rotate_below_the_cap(tmp_path):
+    """상한 아래에서는 회전이 없어야 한다 — 매 턴 회전하면 창이 1 줄로 줄어든다."""
+    (tmp_path / ".omha").mkdir()
+    route_log.record(str(tmp_path), "t1", "ROUTE: handle-directly", "p1")
+    route_log.record(str(tmp_path), "t2", "ROUTE: oh-my-docs", "p2")
+    assert not (tmp_path / ".omha" / "routing.jsonl.1").exists()
+    assert len(route_log.load(tmp_path / ".omha" / "routing.jsonl")) == 2
+
+
+def test_load_reads_the_rotated_generation_too(tmp_path):
+    """회전 순간 분석 창이 조용히 무너지면 안 된다 — 두 세대를 다 읽어야 한다."""
+    (tmp_path / ".omha").mkdir()
+    live = tmp_path / ".omha" / "routing.jsonl"
+    route_log.record(str(tmp_path), "t-old", "> **ROUTE →** oh-my-project · x", "p-old")
+    _fill(live, route_log.MAX_BYTES)
+    route_log.record(str(tmp_path), "t-new", "> **ROUTE →** oh-my-docs · y", "p-new")
+
+    ids = {r["turn_id"] for r in route_log.load(live)}
+    assert "t-old" in ids and "t-new" in ids
+
+
+def test_load_prefers_the_live_record_of_a_turn_that_straddles_a_rotation(tmp_path):
+    """Stop 게이트 재발화가 회전을 사이에 두고 갈리면, 살아남을 건 나중 것이다.
+    회전본을 나중에 읽으면 누락 레코드가 정정 레코드를 덮어쓴다."""
+    (tmp_path / ".omha").mkdir()
+    live = tmp_path / ".omha" / "routing.jsonl"
+    route_log.record(str(tmp_path), "t1", "답만 씀", "p1")          # 1차: ROUTE 누락
+    _fill(live, route_log.MAX_BYTES)
+    route_log.record(str(tmp_path), "t1", "ROUTE: handle-directly", "p1")   # 정정
+
+    rec = [r for r in route_log.load(live) if r["turn_id"] == "t1"][0]
+    assert rec["missing"] is False and rec["lanes"] == ["handle-directly"]
+
+
+def test_rotation_keeps_only_one_generation(tmp_path):
+    """두 번째 회전은 앞 회전본을 덮어쓴다 — 아무도 안 읽는 세대를 쌓지 않는다."""
+    (tmp_path / ".omha").mkdir()
+    live = tmp_path / ".omha" / "routing.jsonl"
+    for turn in ("t1", "t2"):
+        _fill(live, route_log.MAX_BYTES)
+        route_log.record(str(tmp_path), turn, "ROUTE: handle-directly", "p")
+    assert sorted(p.name for p in (tmp_path / ".omha").iterdir()) == \
+        ["routing.jsonl", "routing.jsonl.1"]
+
+
+def test_a_failing_rotation_still_logs(tmp_path, monkeypatch):
+    """회전이 실패해도(권한·경쟁) 로깅은 계속돼야 한다 — 로거는 fail-open 이다."""
+    (tmp_path / ".omha").mkdir()
+    live = tmp_path / ".omha" / "routing.jsonl"
+    _fill(live, route_log.MAX_BYTES)
+    monkeypatch.setattr(route_log.Path, "replace",
+                        lambda *a, **k: (_ for _ in ()).throw(OSError))
+    assert route_log.record(str(tmp_path), "t-new", "ROUTE: oh-my-docs", "p") is not None
+    assert "t-new" in live.read_text()
+
+
 def test_cli_reports_and_exits_nonzero_when_empty(tmp_path, capsys):
     assert route_log._cli(["route_log", str(tmp_path)]) == 1
     (tmp_path / ".omha").mkdir()

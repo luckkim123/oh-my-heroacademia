@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.10.4 — 2026-09-04 — the verdict log had no ceiling
+
+`routing.jsonl` is append-only and nothing ever trimmed it. That is harmless on a
+local disk and is not harmless inside a synced folder: Google Drive, iCloud and
+their kind upload a **whole** file every time it changes, so an unbounded log
+makes every turn re-upload its entire history.
+
+Measured on the vault this plugin runs in, 2026-09-04: 1,039 records over 25
+days, 384 KB, 379 B per record, ~42 records a day. That is 15.5 KB/day, so the
+file reaches roughly 5.9 MB in a year — and by then every turn is pushing 5.9 MB.
+
+**This is not the same failure that took out the Drive queue the same day.** That
+one was hook logs rewritten per *tool call* — measured at one write per ~8s, and
+the fix there was to move them out of the synced tree entirely. This log is
+written once per *turn*, measured at one write per ~5 min: about 37x less often,
+and nothing in that diagnosis pointed at it. The problem here is growth, not
+frequency, so the fix is a ceiling rather than a relocation.
+
+### Added
+
+- **Two-generation rotation in `route_log.py`.** Past `MAX_BYTES` (512 KiB, about
+  1,380 records — roughly 33 days at the measured rate) the live file is pushed to
+  `routing.jsonl.1` and a fresh one starts. `Path.replace` overwrites the older
+  generation atomically, so exactly two files exist, ever.
+
+  512 KiB is chosen so one live file still covers the 22-30 day windows every
+  card verdict so far has been argued from; the rotated generation doubles the
+  retained window. A third generation is deliberately not kept — `load()` reads
+  two, and a file nobody reads is storage nobody can account for.
+
+### Changed
+
+- **`load()` now reads the rotated generation first, then the live file.** Reading
+  only the live file would collapse the analysis window at the instant of
+  rotation with nothing in the output saying so — the same silent-shrink class of
+  bug this log exists to catch. Order matters and is tested: the Stop gate can
+  fire twice on one turn, and if that pair straddles a rotation, reading newest
+  first would let the `missing` record overwrite its own correction.
+
+- Rotation failure is swallowed like every other failure in this module. A logger
+  that cannot rotate must still log.
+
 ## 0.10.3 — 2026-08-31 — the gate could deny a real ROUTE and never say why
 
 The ROUTE gate has a known false-positive class: a real-work tool can fire before

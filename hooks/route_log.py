@@ -17,6 +17,13 @@ Append-only, one line per Stop event. The Stop gate can fire twice on a turn
 that had to be sent back for its ROUTE line, so records are NOT unique per
 turn_id — group by turn_id and take the last when reading.
 
+Bounded, in two generations. An append-only log that nothing ever trims grows
+without limit, and a sync engine (Google Drive, iCloud) uploads a *whole* file
+every time it changes — so an unbounded log makes every turn upload its entire
+history. Past MAX_BYTES the live file is pushed to `routing.jsonl.1` and a fresh
+one starts; `load()` reads both, so the analysis window does not silently shrink
+at the moment of rotation.
+
 Stdlib only. Every failure is swallowed: a logger must never break a session.
 """
 import json
@@ -27,6 +34,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import omha_paths
+
+# Past this size the live file is pushed one generation aside.
+# Why 512 KiB (measured 2026-09-04, a vault mirrored by Google Drive): a record
+# is 379 B and the log takes ~42 a day, so 15.5 KB/day — left alone it reaches
+# 5.9 MB in a year, and a sync engine re-uploads all of it every turn. 512 KiB
+# is ~1,380 records, about 33 days, which covers on its own the 22-30 day
+# windows every card verdict so far has been argued from. With the rotated
+# generation the retained window is twice that.
+MAX_BYTES = 512 * 1024
+ROTATED_SUFFIX = ".1"
 
 # `> **ROUTE →** oh-my-project · reason` / `ROUTE: handle-directly` / `ROUTE -> omc`
 _LANE_RE = re.compile(r"ROUTE\s*(?:->|→|:)\**\s*([a-z][a-z0-9-]*)")
@@ -170,6 +187,32 @@ def build_record(turn_id, window, prompt, now=None, session_id="", work=False):
     }
 
 
+def _rotated(path):
+    """The previous generation's path — `routing.jsonl` -> `routing.jsonl.1`.
+
+    Not `with_suffix()`: that would replace `.jsonl` and give `routing.1`, which
+    no `*.jsonl` glob or reader would ever find again."""
+    p = Path(path)
+    return p.with_name(p.name + ROTATED_SUFFIX)
+
+
+def _rotate(path):
+    """Push the live file aside once it passes MAX_BYTES. Never raises.
+
+    One generation only: `load()` reads exactly these two, so a third would be
+    written and never read again — storage nobody can account for.
+    `Path.replace` overwrites the older generation atomically."""
+    try:
+        if path.stat().st_size <= MAX_BYTES:
+            return
+    except OSError:
+        return                      # no file yet — nothing to rotate
+    try:
+        path.replace(_rotated(path))
+    except OSError:
+        pass                        # a failed rotation must not stop the logging
+
+
 def record(cwd, turn_id, window, prompt, now=None, session_id="", work=False):
     """Append one record. Returns the path written, or None when off/failed."""
     d = log_dir(cwd)
@@ -177,6 +220,7 @@ def record(cwd, turn_id, window, prompt, now=None, session_id="", work=False):
         return None
     path = d / "routing.jsonl"
     try:
+        _rotate(path)
         line = json.dumps(build_record(turn_id, window, prompt, now, session_id, work),
                           ensure_ascii=False)
         with open(path, "a", encoding="utf-8") as f:
@@ -193,21 +237,27 @@ def load(path):
 
     The Stop gate fires twice on a turn it had to send back for its ROUTE line,
     which writes a `missing` record and then a corrected one. Counting both would
-    report a miss rate roughly double the real one."""
+    report a miss rate roughly double the real one.
+
+    Reads the rotated generation first, then the live file — oldest to newest, so
+    the dedup still keeps the last record of a turn that straddles a rotation.
+    Reading only the live file would make the window collapse the moment it
+    rotates, with nothing in the output saying so."""
     latest = {}
-    try:
-        with open(path, encoding="utf-8") as f:
-            for ln in f:
-                ln = ln.strip()
-                if not ln:
-                    continue
-                try:
-                    rec = json.loads(ln)
-                except json.JSONDecodeError:
-                    continue
-                latest[rec.get("turn_id")] = rec
-    except OSError:
-        return []
+    for p in (_rotated(path), Path(path)):
+        try:
+            with open(p, encoding="utf-8") as f:
+                for ln in f:
+                    ln = ln.strip()
+                    if not ln:
+                        continue
+                    try:
+                        rec = json.loads(ln)
+                    except json.JSONDecodeError:
+                        continue
+                    latest[rec.get("turn_id")] = rec
+        except OSError:
+            continue
     return list(latest.values())
 
 
